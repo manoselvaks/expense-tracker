@@ -1,91 +1,116 @@
 """
-Expense Tracker — Web App (V3)
---------------------------------
+Expense Tracker — Web App (V4, database-backed)
+---------------------------------------------------
 Run this with:
     python3 app.py
 
 Then open your browser to: http://127.0.0.1:5000
 
-This uses the SAME expenses.csv and budgets.json files as tracker_v2.py,
-so if you copy this into your ~/expense-tracker folder, all your existing
-data carries over automatically.
+Requires a DATABASE_URL environment variable pointing at a PostgreSQL
+database. On Render, this is set in the service's Environment settings.
+Locally, it's read from a .env file.
 """
 
-import csv
 import os
-import json
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for
+import psycopg2
+import psycopg2.extras
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_FILE = os.path.join(BASE_DIR, "expenses.csv")
-BUDGET_FILE = os.path.join(BASE_DIR, "budgets.json")
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+
+def get_connection():
+    return psycopg2.connect(DATABASE_URL)
+
+
+def init_db():
+    """Create tables if they don't already exist. Safe to run every startup."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS expenses (
+            id SERIAL PRIMARY KEY,
+            date DATE NOT NULL,
+            amount NUMERIC(10,2) NOT NULL,
+            category TEXT NOT NULL,
+            note TEXT
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS budgets (
+            category TEXT PRIMARY KEY,
+            amount NUMERIC(10,2) NOT NULL
+        )
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 def read_expenses():
-    if not os.path.isfile(LOG_FILE):
-        return []
-    with open(LOG_FILE, "r") as f:
-        rows = list(csv.DictReader(f))
-
-    # Migrate older files that don't have an "id" column yet
-    if rows and "id" not in rows[0]:
-        for i, r in enumerate(rows, start=1):
-            r["id"] = str(i)
-        with open(LOG_FILE, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["id", "date", "amount", "category", "note"])
-            for r in rows:
-                writer.writerow([r["id"], r["date"], r["amount"], r["category"], r["note"]])
-
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT id, date, amount, category, note FROM expenses ORDER BY date DESC, id DESC")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
     return rows
 
 
 def add_expense(amount, note, category):
-    file_exists = os.path.isfile(LOG_FILE)
-    with open(LOG_FILE, "a", newline="") as f:
-        writer = csv.writer(f)
-        if not file_exists:
-            writer.writerow(["id", "date", "amount", "category", "note"])
-        writer.writerow([next_id(), datetime.now().strftime("%Y-%m-%d"), round(float(amount), 2), category, note])
-
-
-def next_id():
-    rows = read_expenses()
-    if not rows:
-        return 1
-    return max(int(r["id"]) for r in rows) + 1
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO expenses (date, amount, category, note) VALUES (%s, %s, %s, %s)",
+        (datetime.now().date(), round(float(amount), 2), category, note)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 def delete_expense(expense_id):
-    rows = read_expenses()
-    remaining = [r for r in rows if r["id"] != str(expense_id)]
-    with open(LOG_FILE, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["id", "date", "amount", "category", "note"])
-        for r in remaining:
-            writer.writerow([r["id"], r["date"], r["amount"], r["category"], r["note"]])
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM expenses WHERE id = %s", (expense_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 def load_budgets():
-    if not os.path.isfile(BUDGET_FILE):
-        return {}
-    with open(BUDGET_FILE, "r") as f:
-        return json.load(f)
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT category, amount FROM budgets")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return {category: float(amount) for category, amount in rows}
 
 
-def save_budgets(budgets):
-    with open(BUDGET_FILE, "w") as f:
-        json.dump(budgets, f, indent=2)
+def set_budget(category, amount):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO budgets (category, amount) VALUES (%s, %s)
+        ON CONFLICT (category) DO UPDATE SET amount = EXCLUDED.amount
+    """, (category, round(float(amount), 2)))
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 @app.route("/")
 def home():
     rows = read_expenses()
     this_month = datetime.now().strftime("%Y-%m")
-    filtered = [r for r in rows if r["date"].startswith(this_month)]
+    filtered = [r for r in rows if r["date"].strftime("%Y-%m") == this_month]
 
     totals_by_category = {}
     total_all = 0.0
@@ -107,7 +132,10 @@ def home():
             "budget": budget, "over_budget": over_budget, "budget_pct": budget_pct
         })
 
-    recent = sorted(filtered, key=lambda r: r["date"], reverse=True)[:10]
+    recent = filtered[:10]
+    for r in recent:
+        r["date"] = r["date"].strftime("%Y-%m-%d")
+        r["amount"] = float(r["amount"])
 
     chart_labels = [c["name"] for c in category_data]
     chart_values = [round(c["total"], 2) for c in category_data]
@@ -124,12 +152,6 @@ def home():
     )
 
 
-@app.route("/delete/<expense_id>", methods=["POST"])
-def delete(expense_id):
-    delete_expense(expense_id)
-    return redirect(url_for("home"))
-
-
 @app.route("/add", methods=["POST"])
 def add():
     add_expense(
@@ -140,13 +162,19 @@ def add():
     return redirect(url_for("home"))
 
 
-@app.route("/budget", methods=["POST"])
-def budget():
-    budgets = load_budgets()
-    budgets[request.form["category"]] = round(float(request.form["amount"]), 2)
-    save_budgets(budgets)
+@app.route("/delete/<int:expense_id>", methods=["POST"])
+def delete(expense_id):
+    delete_expense(expense_id)
     return redirect(url_for("home"))
 
+
+@app.route("/budget", methods=["POST"])
+def budget():
+    set_budget(request.form["category"], request.form["amount"])
+    return redirect(url_for("home"))
+
+
+init_db()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
