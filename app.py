@@ -24,6 +24,11 @@ app = Flask(__name__)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
+BROAD_CATEGORIES = [
+    "food", "transport", "shopping", "entertainment",
+    "subscriptions", "bills", "health", "travel", "other",
+]
+
 
 def get_connection():
     return psycopg2.connect(DATABASE_URL)
@@ -79,7 +84,7 @@ def add_expense(amount, note, category):
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO expenses (date, amount, category, note) VALUES (%s, %s, %s, %s)",
-        (datetime.now().date(), round(float(amount), 2), category, note)
+        (datetime.now().date(), round(float(amount), 2), normalize_category(category), note)
     )
     conn.commit()
     cur.close()
@@ -101,7 +106,7 @@ def add_recurring(category, amount, note):
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO recurring_expenses (category, amount, note) VALUES (%s, %s, %s)",
-        (category, round(float(amount), 2), note)
+        (normalize_category(category), round(float(amount), 2), note)
     )
     conn.commit()
     cur.close()
@@ -144,6 +149,64 @@ def ensure_recurring_logged():
     conn.close()
 
 
+def normalize_category(raw):
+    return raw.strip().lower()
+
+
+def get_all_categories():
+    """Every category currently in use, pulled from expenses, budgets, and
+    recurring templates, deduplicated. No separate table needed — the
+    category list is just whatever's actually been used."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT category FROM expenses
+        UNION SELECT category FROM budgets
+        UNION SELECT category FROM recurring_expenses
+        ORDER BY category
+    """)
+    categories = [row[0] for row in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return categories
+
+
+def rename_category(old_name, new_name):
+    old_name = normalize_category(old_name)
+    new_name = normalize_category(new_name)
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE expenses SET category = %s WHERE category = %s", (new_name, old_name))
+    cur.execute("UPDATE recurring_expenses SET category = %s WHERE category = %s", (new_name, old_name))
+    # Budgets: if the new name already has a budget, keep the new one and drop the old row
+    cur.execute("SELECT amount FROM budgets WHERE category = %s", (old_name,))
+    old_budget = cur.fetchone()
+    if old_budget:
+        cur.execute("""
+            INSERT INTO budgets (category, amount) VALUES (%s, %s)
+            ON CONFLICT (category) DO NOTHING
+        """, (new_name, old_budget[0]))
+        cur.execute("DELETE FROM budgets WHERE category = %s", (old_name,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def delete_category(category):
+    """Deletes the budget for this category (if any). Does NOT delete
+    expenses that used it — those stay, just under an 'uncategorized'
+    label, since deleting someone's spending history would be surprising."""
+    category = normalize_category(category)
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM budgets WHERE category = %s", (category,))
+    cur.execute("UPDATE expenses SET category = 'uncategorized' WHERE category = %s", (category,))
+    cur.execute("DELETE FROM recurring_expenses WHERE category = %s", (category,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
 def get_expense(expense_id):
     conn = get_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -159,7 +222,7 @@ def update_expense(expense_id, amount, note, category, date):
     cur = conn.cursor()
     cur.execute(
         "UPDATE expenses SET amount = %s, note = %s, category = %s, date = %s WHERE id = %s",
-        (round(float(amount), 2), note, category, date, expense_id)
+        (round(float(amount), 2), note, normalize_category(category), date, expense_id)
     )
     conn.commit()
     cur.close()
@@ -191,7 +254,7 @@ def set_budget(category, amount):
     cur.execute("""
         INSERT INTO budgets (category, amount) VALUES (%s, %s)
         ON CONFLICT (category) DO UPDATE SET amount = EXCLUDED.amount
-    """, (category, round(float(amount), 2)))
+    """, (normalize_category(category), round(float(amount), 2)))
     conn.commit()
     cur.close()
     conn.close()
@@ -257,6 +320,7 @@ def home():
         last_month_total=last_month_total,
         last_month_label=last_month_date.strftime("%B %Y"),
         month_change_pct=month_change_pct,
+        categories=BROAD_CATEGORIES,
     )
 
 
@@ -277,7 +341,7 @@ def edit_form(expense_id):
         return redirect(url_for("home"))
     expense["date"] = expense["date"].strftime("%Y-%m-%d")
     expense["amount"] = float(expense["amount"])
-    return render_template("edit.html", expense=expense)
+    return render_template("edit.html", expense=expense, categories=BROAD_CATEGORIES)
 
 
 @app.route("/update/<int:expense_id>", methods=["POST"])
@@ -295,6 +359,18 @@ def update(expense_id):
 @app.route("/delete/<int:expense_id>", methods=["POST"])
 def delete(expense_id):
     delete_expense(expense_id)
+    return redirect(url_for("home"))
+
+
+@app.route("/category/rename", methods=["POST"])
+def category_rename():
+    rename_category(request.form["old_name"], request.form["new_name"])
+    return redirect(url_for("home"))
+
+
+@app.route("/category/delete", methods=["POST"])
+def category_delete():
+    delete_category(request.form["category"])
     return redirect(url_for("home"))
 
 
