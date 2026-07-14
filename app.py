@@ -37,6 +37,8 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
 MAIL_APP_PASSWORD = os.environ.get("MAIL_APP_PASSWORD")
 
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
+
 BROAD_CATEGORIES = [
     "food", "transport", "shopping", "entertainment",
     "subscriptions", "bills", "health", "travel", "other",
@@ -197,6 +199,7 @@ def login():
         if row and check_password_hash(row[1], password):
             session["user_id"] = row[0]
             session["email"] = email
+            session.permanent = bool(request.form.get("remember"))
             return redirect(url_for("home"))
 
         flash("Incorrect email or password.")
