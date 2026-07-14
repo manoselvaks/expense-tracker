@@ -312,6 +312,29 @@
     </div>
   </div>
 
+  <div class="card" style="display:flex; justify-content:space-between; align-items:center;">
+    <div>
+      <div style="font-family:'IBM Plex Mono', monospace; font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-mute); margin-bottom:6px;">
+        vs {{ last_month_label }}
+      </div>
+      <div style="font-family:'IBM Plex Mono', monospace; font-size:15px; color:var(--text-mute);">
+        £{{ "%.2f"|format(last_month_total) }} last month
+      </div>
+    </div>
+    {% if month_change_pct is not none %}
+      <div style="text-align:right;">
+        <div style="font-family:'Fraunces', serif; font-size:26px; font-weight:600; color: {{ 'var(--brick)' if month_change_pct > 0 else 'var(--forest)' }};">
+          {{ "+" if month_change_pct > 0 else "" }}{{ "%.0f"|format(month_change_pct) }}%
+        </div>
+        <div style="font-size:12px; color:var(--text-mute);">
+          {{ "more than" if month_change_pct > 0 else "less than" }} last month
+        </div>
+      </div>
+    {% else %}
+      <div style="color:var(--text-mute); font-size:13px;">No data for last month</div>
+    {% endif %}
+  </div>
+
   <div class="card">
     <h2>Log an expense</h2>
     <form class="inline" action="/add" method="POST">

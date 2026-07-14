@@ -12,7 +12,7 @@ Locally, it's read from a .env file.
 """
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, render_template, request, redirect, url_for
 import psycopg2
 import psycopg2.extras
@@ -204,6 +204,13 @@ def home():
     this_month = datetime.now().strftime("%Y-%m")
     filtered = [r for r in rows if r["date"].strftime("%Y-%m") == this_month]
 
+    # Work out last month's key (handles January -> previous December correctly)
+    first_of_this_month = datetime.now().replace(day=1)
+    last_month_date = first_of_this_month - timedelta(days=1)
+    last_month = last_month_date.strftime("%Y-%m")
+    last_month_rows = [r for r in rows if r["date"].strftime("%Y-%m") == last_month]
+    last_month_total = sum(float(r["amount"]) for r in last_month_rows)
+
     totals_by_category = {}
     total_all = 0.0
     for row in filtered:
@@ -232,6 +239,11 @@ def home():
     chart_labels = [c["name"] for c in category_data]
     chart_values = [round(c["total"], 2) for c in category_data]
 
+    if last_month_total > 0:
+        month_change_pct = ((total_all - last_month_total) / last_month_total) * 100
+    else:
+        month_change_pct = None
+
     return render_template(
         "index.html",
         total_all=total_all,
@@ -242,6 +254,9 @@ def home():
         chart_labels=chart_labels,
         chart_values=chart_values,
         recurring=get_recurring(),
+        last_month_total=last_month_total,
+        last_month_label=last_month_date.strftime("%B %Y"),
+        month_change_pct=month_change_pct,
     )
 
 
