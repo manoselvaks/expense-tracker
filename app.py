@@ -48,6 +48,17 @@ def init_db():
             amount NUMERIC(10,2) NOT NULL
         )
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS recurring_expenses (
+            id SERIAL PRIMARY KEY,
+            category TEXT NOT NULL,
+            amount NUMERIC(10,2) NOT NULL,
+            note TEXT NOT NULL
+        )
+    """)
+    cur.execute("""
+        ALTER TABLE expenses ADD COLUMN IF NOT EXISTS recurring_id INTEGER REFERENCES recurring_expenses(id)
+    """)
     conn.commit()
     cur.close()
     conn.close()
@@ -70,6 +81,64 @@ def add_expense(amount, note, category):
         "INSERT INTO expenses (date, amount, category, note) VALUES (%s, %s, %s, %s)",
         (datetime.now().date(), round(float(amount), 2), category, note)
     )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def get_recurring():
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT id, category, amount, note FROM recurring_expenses ORDER BY id")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+
+def add_recurring(category, amount, note):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO recurring_expenses (category, amount, note) VALUES (%s, %s, %s)",
+        (category, round(float(amount), 2), note)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def delete_recurring(recurring_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM recurring_expenses WHERE id = %s", (recurring_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def ensure_recurring_logged():
+    """Check every recurring template — if it hasn't been logged this
+    calendar month yet, add it now. Safe to call on every page load."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, category, amount, note FROM recurring_expenses")
+    templates = cur.fetchall()
+
+    for rid, category, amount, note in templates:
+        cur.execute("""
+            SELECT 1 FROM expenses
+            WHERE recurring_id = %s
+              AND date_trunc('month', date) = date_trunc('month', CURRENT_DATE)
+        """, (rid,))
+        already_logged = cur.fetchone() is not None
+
+        if not already_logged:
+            cur.execute(
+                "INSERT INTO expenses (date, amount, category, note, recurring_id) VALUES (%s, %s, %s, %s, %s)",
+                (datetime.now().date(), amount, category, note, rid)
+            )
+
     conn.commit()
     cur.close()
     conn.close()
@@ -130,6 +199,7 @@ def set_budget(category, amount):
 
 @app.route("/")
 def home():
+    ensure_recurring_logged()
     rows = read_expenses()
     this_month = datetime.now().strftime("%Y-%m")
     filtered = [r for r in rows if r["date"].strftime("%Y-%m") == this_month]
@@ -171,6 +241,7 @@ def home():
         expense_count=len(filtered),
         chart_labels=chart_labels,
         chart_values=chart_values,
+        recurring=get_recurring(),
     )
 
 
@@ -209,6 +280,22 @@ def update(expense_id):
 @app.route("/delete/<int:expense_id>", methods=["POST"])
 def delete(expense_id):
     delete_expense(expense_id)
+    return redirect(url_for("home"))
+
+
+@app.route("/recurring/add", methods=["POST"])
+def recurring_add():
+    add_recurring(
+        category=request.form["category"],
+        amount=request.form["amount"],
+        note=request.form["note"],
+    )
+    return redirect(url_for("home"))
+
+
+@app.route("/recurring/delete/<int:recurring_id>", methods=["POST"])
+def recurring_delete(recurring_id):
+    delete_recurring(recurring_id)
     return redirect(url_for("home"))
 
 

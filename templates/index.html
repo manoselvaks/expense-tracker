@@ -351,6 +351,34 @@
   </div>
 
   <div class="card">
+    <h2>Recurring monthly expenses</h2>
+    {% if recurring %}
+      {% for r in recurring %}
+      <div class="cat-row" style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <span class="cat-name">{{ r.note }}</span>
+          <span style="color:var(--text-mute); font-size:12px;"> — {{ r.category }}</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="cat-amount">£{{ "%.2f"|format(r.amount) }}</span>
+          <form action="/recurring/delete/{{ r.id }}" method="POST" onsubmit="return confirm('Stop this recurring expense?');">
+            <button type="submit" style="background:none;color:var(--brick);border:none;padding:2px 6px;font-size:12px;box-shadow:none;">✕</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="empty-note">No recurring expenses set — add subscriptions or regular bills below.</p>
+    {% endif %}
+    <form class="inline" action="/recurring/add" method="POST" style="margin-top:16px;">
+      <input type="number" step="0.01" name="amount" placeholder="£0.00" required>
+      <input type="text" name="note" placeholder="e.g. Netflix" required>
+      <input type="text" name="category" placeholder="Category" required>
+      <button type="submit">Add</button>
+    </form>
+  </div>
+
+  <div class="card">
     <h2>Set a budget</h2>
     <form class="budget-form" action="/budget" method="POST">
       <input type="text" name="category" placeholder="Category" required>
