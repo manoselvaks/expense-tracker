@@ -57,6 +57,19 @@ CATEGORY_ICONS = {
     "uncategorized": "❔",
 }
 
+CURRENCIES = {
+    "GBP": "£",
+    "USD": "$",
+    "EUR": "€",
+    "INR": "₹",
+    "AUD": "A$",
+    "CAD": "C$",
+    "JPY": "¥",
+    "CHF": "CHF ",
+    "CNY": "¥",
+    "NZD": "NZ$",
+}
+
 
 def get_connection():
     return psycopg2.connect(DATABASE_URL)
@@ -92,6 +105,8 @@ def init_db():
         cur.execute("ALTER TABLE users ADD COLUMN reset_token TEXT")
     if not column_exists(cur, "users", "reset_token_expires"):
         cur.execute("ALTER TABLE users ADD COLUMN reset_token_expires TIMESTAMP")
+    if not column_exists(cur, "users", "currency"):
+        cur.execute("ALTER TABLE users ADD COLUMN currency TEXT NOT NULL DEFAULT 'GBP'")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS expenses (
@@ -322,6 +337,40 @@ def reset_password(token):
     cur.close()
     conn.close()
     return render_template("reset_password.html", token=token)
+
+
+def get_user_currency(uid):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT currency FROM users WHERE id = %s", (uid,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row[0] if row else "GBP"
+
+
+@app.route("/settings", methods=["GET", "POST"])
+@login_required
+def settings():
+    uid = current_user_id()
+    if request.method == "POST":
+        currency = request.form["currency"]
+        if currency in CURRENCIES:
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET currency = %s WHERE id = %s", (currency, uid))
+            conn.commit()
+            cur.close()
+            conn.close()
+            flash("Currency updated.")
+        return redirect(url_for("settings"))
+
+    return render_template(
+        "settings.html",
+        currencies=CURRENCIES,
+        current_currency=get_user_currency(uid),
+        user_email=session.get("email"),
+    )
 
 
 @app.route("/logout")
@@ -561,6 +610,7 @@ def home():
         category_icons=CATEGORY_ICONS,
         user_email=session.get("email"),
         show_claim_banner=has_unclaimed_data(),
+        currency_symbol=CURRENCIES.get(get_user_currency(uid), "£"),
     )
 
 
@@ -584,7 +634,7 @@ def edit_form(expense_id):
         return redirect(url_for("home"))
     expense["date"] = expense["date"].strftime("%Y-%m-%d")
     expense["amount"] = float(expense["amount"])
-    return render_template("edit.html", expense=expense, categories=BROAD_CATEGORIES, category_icons=CATEGORY_ICONS)
+    return render_template("edit.html", expense=expense, categories=BROAD_CATEGORIES, category_icons=CATEGORY_ICONS, currency_symbol=CURRENCIES.get(get_user_currency(current_user_id()), "£"))
 
 
 @app.route("/update/<int:expense_id>", methods=["POST"])
@@ -699,6 +749,7 @@ def search():
         keyword=keyword,
         start_date=start_date,
         end_date=end_date,
+        currency_symbol=CURRENCIES.get(get_user_currency(uid), "£"),
     )
 
 
@@ -747,6 +798,7 @@ def year_view(year=None):
         avg_month=avg_month,
         busiest_month=busiest_month,
         expense_count=len(year_rows),
+        currency_symbol=CURRENCIES.get(get_user_currency(uid), "£"),
     )
 
 

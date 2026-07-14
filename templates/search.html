@@ -121,7 +121,7 @@
 
   <div class="card">
     {% if results %}
-      <div class="results-summary">{{ results|length }} result{{ 's' if results|length != 1 }} · £{{ "%.2f"|format(total) }} total</div>
+      <div class="results-summary">{{ results|length }} result{{ 's' if results|length != 1 }} · {{ currency_symbol }}{{ "%.2f"|format(total) }} total</div>
       <table>
         <tr><th>Date</th><th>Category</th><th>Note</th><th style="text-align:right">Amount</th><th></th></tr>
         {% for r in results %}
@@ -129,7 +129,7 @@
           <td>{{ r.date }}</td>
           <td class="cat">{{ category_icons.get(r.category, '') }} {{ r.category }}</td>
           <td>{{ r.note }}</td>
-          <td class="amount">£{{ "%.2f"|format(r.amount) }}</td>
+          <td class="amount">{{ currency_symbol }}{{ "%.2f"|format(r.amount) }}</td>
           <td style="text-align:right"><a href="/edit/{{ r.id }}" style="color:var(--text-mute); text-decoration:none; font-size:13px;">✎</a></td>
         </tr>
         {% endfor %}

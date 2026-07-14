@@ -307,6 +307,8 @@
       &nbsp;·&nbsp;
       <a href="/export" style="color:var(--gold); text-decoration:none; font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.05em;">Export</a>
       &nbsp;·&nbsp;
+      <a href="/settings" style="color:var(--gold); text-decoration:none; font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.05em;">Settings</a>
+      &nbsp;·&nbsp;
       <a href="/logout" style="color:var(--gold); text-decoration:none; font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.05em;">Log out</a>
       <div style="font-size:11px; color:rgba(251,247,238,0.5); margin-top:4px;">{{ user_email }}</div>
     </div>
@@ -325,7 +327,7 @@
     <div class="stamp-inner">
       <div>
         <div class="stamp-total-label">Spent this month</div>
-        <div class="stamp-total">£{{ "%.2f"|format(total_all) }}</div>
+        <div class="stamp-total">{{ currency_symbol }}{{ "%.2f"|format(total_all) }}</div>
       </div>
       <div class="stamp-badge">{{ expense_count }}<br>entries</div>
     </div>
@@ -337,7 +339,7 @@
         vs {{ last_month_label }}
       </div>
       <div style="font-family:'IBM Plex Mono', monospace; font-size:15px; color:var(--text-mute);">
-        £{{ "%.2f"|format(last_month_total) }} last month
+        {{ currency_symbol }}{{ "%.2f"|format(last_month_total) }} last month
       </div>
     </div>
     {% if month_change_pct is not none %}
@@ -357,7 +359,7 @@
   <div class="card">
     <h2>Log an expense</h2>
     <form class="inline" action="/add" method="POST">
-      <input type="number" step="0.01" name="amount" placeholder="£0.00" required>
+      <input type="number" step="0.01" name="amount" placeholder="{{ currency_symbol }}0.00" required>
       <input type="text" name="note" placeholder="What was it?" required>
       <select name="category" required>
         {% for c in categories %}
@@ -378,14 +380,14 @@
       <div class="cat-row">
         <div class="cat-row-top">
           <span class="cat-name">{{ category_icons.get(c.name, '') }} {{ c.name }}</span>
-          <span class="cat-amount {% if c.over_budget %}over{% endif %}">£{{ "%.2f"|format(c.total) }}</span>
+          <span class="cat-amount {% if c.over_budget %}over{% endif %}">{{ currency_symbol }}{{ "%.2f"|format(c.total) }}</span>
         </div>
         <div class="bar-track">
           <div class="bar-fill {% if c.over_budget %}over{% endif %}" style="width: {{ [c.pct_of_spend, 100]|min }}%"></div>
         </div>
         {% if c.budget %}
           <div class="cat-budget-label {% if c.over_budget %}over{% endif %}">
-            {{ "%.0f"|format(c.budget_pct) }}% of £{{ "%.2f"|format(c.budget) }} budget
+            {{ "%.0f"|format(c.budget_pct) }}% of {{ currency_symbol }}{{ "%.2f"|format(c.budget) }} budget
             {% if c.over_budget %} — over{% endif %}
           </div>
         {% endif %}
@@ -406,7 +408,7 @@
           <span style="color:var(--text-mute); font-size:12px;"> — {{ category_icons.get(r.category, '') }} {{ r.category }}</span>
         </div>
         <div style="display:flex; align-items:center; gap:10px;">
-          <span class="cat-amount">£{{ "%.2f"|format(r.amount) }}</span>
+          <span class="cat-amount">{{ currency_symbol }}{{ "%.2f"|format(r.amount) }}</span>
           <form action="/recurring/delete/{{ r.id }}" method="POST" onsubmit="return confirm('Stop this recurring expense?');">
             <button type="submit" style="background:none;color:var(--brick);border:none;padding:2px 6px;font-size:12px;box-shadow:none;">✕</button>
           </form>
@@ -417,7 +419,7 @@
       <p class="empty-note">No recurring expenses set — add subscriptions or regular bills below.</p>
     {% endif %}
     <form class="inline" action="/recurring/add" method="POST" style="margin-top:16px;">
-      <input type="number" step="0.01" name="amount" placeholder="£0.00" required>
+      <input type="number" step="0.01" name="amount" placeholder="{{ currency_symbol }}0.00" required>
       <input type="text" name="note" placeholder="e.g. Netflix" required>
       <select name="category" required>
         {% for c in categories %}
@@ -436,7 +438,7 @@
         <option value="{{ c }}">{{ category_icons.get(c, '') }} {{ c|capitalize }}</option>
         {% endfor %}
       </select>
-      <input type="number" step="0.01" name="amount" placeholder="£/month" required>
+      <input type="number" step="0.01" name="amount" placeholder="{{ currency_symbol }}/month" required>
       <button type="submit">Set</button>
     </form>
   </div>
@@ -451,7 +453,7 @@
         <td>{{ r.date }}</td>
         <td class="cat">{{ category_icons.get(r.category, '') }} {{ r.category }}</td>
         <td>{{ r.note }}</td>
-        <td class="amount">£{{ "%.2f"|format(r.amount|float) }}</td>
+        <td class="amount">{{ currency_symbol }}{{ "%.2f"|format(r.amount|float) }}</td>
         <td style="text-align:right; white-space:nowrap;">
           <a href="/edit/{{ r.id }}" style="color:var(--text-mute); text-decoration:none; font-size:13px; padding:2px 6px;">✎</a>
           <form action="/delete/{{ r.id }}" method="POST" style="display:inline" onsubmit="return confirm('Delete this entry?');">

@@ -105,11 +105,11 @@
   <div class="stamp">
     <div class="stamp-inner">
       <div class="stamp-total-label">Total spent in {{ year }}</div>
-      <div class="stamp-total">£{{ "%.2f"|format(year_total) }}</div>
+      <div class="stamp-total">{{ currency_symbol }}{{ "%.2f"|format(year_total) }}</div>
       <div class="stats-row">
         <div>
           <div class="stat-label">Avg / month</div>
-          <div class="stat-value">£{{ "%.2f"|format(avg_month) }}</div>
+          <div class="stat-value">{{ currency_symbol }}{{ "%.2f"|format(avg_month) }}</div>
         </div>
         {% if busiest_month %}
         <div>
@@ -142,7 +142,7 @@
       {% for c in category_data %}
       <div class="cat-row">
         <span class="cat-name">{{ category_icons.get(c.name, '') }} {{ c.name }}</span>
-        <span class="cat-amount">£{{ "%.2f"|format(c.total) }}</span>
+        <span class="cat-amount">{{ currency_symbol }}{{ "%.2f"|format(c.total) }}</span>
       </div>
       {% endfor %}
     {% else %}
