@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger — {{ year }} in review</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
+<style>
+  :root {
+    --ink-bg: #10262A; --ink-bg-deep: #0B1B1E; --paper: #FBF7EE; --paper-dim: #F1EBDC;
+    --text-dark: #1D2321; --text-mute: #6B6558; --gold: #C79A44; --gold-deep: #A87F34;
+    --brick: #B0453D; --forest: #3F6B4F; --hairline: #E2DAC5;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--ink-bg-deep); overscroll-behavior-y: none; }
+  body {
+    margin: 0;
+    background: radial-gradient(ellipse at top, var(--ink-bg) 0%, var(--ink-bg-deep) 100%);
+    font-family: 'Inter', sans-serif;
+    color: var(--text-dark);
+    min-height: 100vh;
+    padding: 48px 20px 80px;
+    overscroll-behavior-y: none;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  .masthead {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    margin-bottom: 28px; padding: 0 4px;
+  }
+  .masthead h1 {
+    font-family: 'Fraunces', serif; font-weight: 600; font-size: 28px;
+    color: var(--paper); margin: 0; letter-spacing: 0.01em;
+  }
+  .nav-links a {
+    color: var(--gold); text-decoration: none; font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px; letter-spacing: 0.05em;
+  }
+  .year-nav {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 20px;
+  }
+  .year-nav a {
+    color: var(--paper); text-decoration: none; font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px; opacity: 0.7;
+  }
+  .year-nav a:hover { opacity: 1; }
+  .year-nav .current-year {
+    font-family: 'Fraunces', serif; color: var(--paper); font-size: 20px; font-weight: 600;
+  }
+  .stamp {
+    background: var(--paper); border-radius: 3px;
+    box-shadow: 0 18px 40px -12px rgba(0,0,0,0.5);
+    overflow: hidden; margin-bottom: 20px;
+  }
+  .stamp-inner { padding: 28px 32px; }
+  .stamp-total-label {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.12em; color: var(--text-mute); margin-bottom: 6px;
+  }
+  .stamp-total {
+    font-family: 'Fraunces', serif; font-size: 40px; font-weight: 700;
+    line-height: 1; color: var(--text-dark);
+  }
+  .stats-row {
+    display: flex; gap: 24px; margin-top: 18px; padding-top: 18px;
+    border-top: 1px solid var(--hairline);
+  }
+  .stat-label {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--text-mute); margin-bottom: 4px;
+  }
+  .stat-value { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 600; }
+  .card {
+    background: var(--paper); border-radius: 3px;
+    box-shadow: 0 18px 40px -16px rgba(0,0,0,0.45);
+    padding: 28px 32px; margin-bottom: 20px;
+  }
+  .card h2 { font-family: 'Fraunces', serif; font-size: 16px; font-weight: 600; margin: 0 0 18px 0; }
+  .cat-row { padding: 12px 0; border-bottom: 1px solid var(--hairline); display: flex; justify-content: space-between; }
+  .cat-row:last-child { border-bottom: none; }
+  .cat-name { font-weight: 500; font-size: 14px; text-transform: capitalize; }
+  .cat-amount { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 500; }
+  .empty-note { color: var(--text-mute); font-size: 14px; font-style: italic; }
+  .footer-note {
+    text-align: center; color: rgba(251,247,238,0.35); font-size: 12px;
+    margin-top: 32px; font-family: 'IBM Plex Mono', monospace;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <h1>Ledger</h1>
+    <div class="nav-links"><a href="/">← Back to this month</a></div>
+  </div>
+
+  <div class="year-nav">
+    <a href="/year/{{ year - 1 }}">← {{ year - 1 }}</a>
+    <span class="current-year">{{ year }}</span>
+    <a href="/year/{{ year + 1 }}">{{ year + 1 }} →</a>
+  </div>
+
+  <div class="stamp">
+    <div class="stamp-inner">
+      <div class="stamp-total-label">Total spent in {{ year }}</div>
+      <div class="stamp-total">£{{ "%.2f"|format(year_total) }}</div>
+      <div class="stats-row">
+        <div>
+          <div class="stat-label">Avg / month</div>
+          <div class="stat-value">£{{ "%.2f"|format(avg_month) }}</div>
+        </div>
+        {% if busiest_month %}
+        <div>
+          <div class="stat-label">Busiest month</div>
+          <div class="stat-value">{{ busiest_month }}</div>
+        </div>
+        {% endif %}
+        <div>
+          <div class="stat-label">Entries</div>
+          <div class="stat-value">{{ expense_count }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Spending by month</h2>
+    {% if year_total > 0 %}
+      <div style="height: 220px;">
+        <canvas id="monthlyChart"></canvas>
+      </div>
+    {% else %}
+      <p class="empty-note">No expenses logged for {{ year }} yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>By category (whole year)</h2>
+    {% if category_data %}
+      {% for c in category_data %}
+      <div class="cat-row">
+        <span class="cat-name">{{ c.name }}</span>
+        <span class="cat-amount">£{{ "%.2f"|format(c.total) }}</span>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="empty-note">Nothing to show yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="footer-note">Yearly summary · {{ year }}</div>
+
+</div>
+
+{% if year_total > 0 %}
+<script>
+  const ctx = document.getElementById('monthlyChart').getContext('2d');
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: {{ month_names|tojson }},
+      datasets: [{
+        data: {{ monthly_totals|tojson }},
+        backgroundColor: '#C79A44',
+        borderRadius: 3,
+      }]
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { font: { family: 'IBM Plex Mono', size: 10 } } },
+        x: { ticks: { font: { family: 'IBM Plex Mono', size: 10 } } }
+      }
+    }
+  });
+</script>
+{% endif %}
+
+</body>
+</html>

@@ -260,6 +260,53 @@ def set_budget(category, amount):
     conn.close()
 
 
+@app.route("/year")
+@app.route("/year/<int:year>")
+def year_view(year=None):
+    if year is None:
+        year = datetime.now().year
+
+    rows = read_expenses()
+    year_rows = [r for r in rows if r["date"].year == year]
+
+    # Monthly totals, Jan through Dec
+    monthly_totals = [0.0] * 12
+    for r in year_rows:
+        monthly_totals[r["date"].month - 1] += float(r["amount"])
+
+    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+    # Category totals for the whole year
+    totals_by_category = {}
+    year_total = 0.0
+    for r in year_rows:
+        amt = float(r["amount"])
+        totals_by_category[r["category"]] = totals_by_category.get(r["category"], 0) + amt
+        year_total += amt
+
+    category_data = [
+        {"name": cat, "total": total}
+        for cat, total in sorted(totals_by_category.items(), key=lambda x: -x[1])
+    ]
+
+    avg_month = year_total / 12
+    busiest_month_idx = monthly_totals.index(max(monthly_totals)) if year_total > 0 else None
+    busiest_month = month_names[busiest_month_idx] if busiest_month_idx is not None else None
+
+    return render_template(
+        "year.html",
+        year=year,
+        month_names=month_names,
+        monthly_totals=[round(m, 2) for m in monthly_totals],
+        year_total=year_total,
+        category_data=category_data,
+        avg_month=avg_month,
+        busiest_month=busiest_month,
+        expense_count=len(year_rows),
+    )
+
+
 @app.route("/")
 def home():
     ensure_recurring_logged()
