@@ -75,6 +75,28 @@ def add_expense(amount, note, category):
     conn.close()
 
 
+def get_expense(expense_id):
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT id, date, amount, category, note FROM expenses WHERE id = %s", (expense_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row
+
+
+def update_expense(expense_id, amount, note, category, date):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE expenses SET amount = %s, note = %s, category = %s, date = %s WHERE id = %s",
+        (round(float(amount), 2), note, category, date, expense_id)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
 def delete_expense(expense_id):
     conn = get_connection()
     cur = conn.cursor()
@@ -158,6 +180,28 @@ def add():
         amount=request.form["amount"],
         note=request.form["note"],
         category=request.form["category"],
+    )
+    return redirect(url_for("home"))
+
+
+@app.route("/edit/<int:expense_id>")
+def edit_form(expense_id):
+    expense = get_expense(expense_id)
+    if expense is None:
+        return redirect(url_for("home"))
+    expense["date"] = expense["date"].strftime("%Y-%m-%d")
+    expense["amount"] = float(expense["amount"])
+    return render_template("edit.html", expense=expense)
+
+
+@app.route("/update/<int:expense_id>", methods=["POST"])
+def update(expense_id):
+    update_expense(
+        expense_id,
+        amount=request.form["amount"],
+        note=request.form["note"],
+        category=request.form["category"],
+        date=request.form["date"],
     )
     return redirect(url_for("home"))
 
