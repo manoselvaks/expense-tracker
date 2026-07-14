@@ -306,8 +306,20 @@
       <a href="/year" style="color:var(--gold); text-decoration:none; font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.05em;">Year →</a>
       &nbsp;·&nbsp;
       <a href="/export" style="color:var(--gold); text-decoration:none; font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.05em;">Export</a>
+      &nbsp;·&nbsp;
+      <a href="/logout" style="color:var(--gold); text-decoration:none; font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.05em;">Log out</a>
+      <div style="font-size:11px; color:rgba(251,247,238,0.5); margin-top:4px;">{{ user_email }}</div>
     </div>
   </div>
+
+  {% if show_claim_banner %}
+  <div class="card" style="background:#FFF8E8; display:flex; justify-content:space-between; align-items:center; gap:12px;">
+    <div style="font-size:13px; color:var(--text-dark);">There's existing expense data from before accounts were added. Claim it as yours?</div>
+    <form action="/claim-legacy-data" method="POST">
+      <button type="submit" style="white-space:nowrap;">Claim data</button>
+    </form>
+  </div>
+  {% endif %}
 
   <div class="stamp">
     <div class="stamp-inner">
