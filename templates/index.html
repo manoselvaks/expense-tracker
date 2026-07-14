@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger — {{ month_label }}</title>
+
+<!-- PWA setup -->
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#10262A">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ledger">
+<link rel="icon" href="/static/icon-192.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
+<style>
+  :root {
+    --ink-bg: #10262A;
+    --ink-bg-deep: #0B1B1E;
+    --paper: #FBF7EE;
+    --paper-dim: #F1EBDC;
+    --text-dark: #1D2321;
+    --text-mute: #6B6558;
+    --gold: #C79A44;
+    --gold-deep: #A87F34;
+    --brick: #B0453D;
+    --forest: #3F6B4F;
+    --hairline: #E2DAC5;
+  }
+
+  * { box-sizing: border-box; }
+
+  html {
+    background: var(--ink-bg-deep);
+    overscroll-behavior-y: none;
+  }
+
+  body {
+    margin: 0;
+    background: radial-gradient(ellipse at top, var(--ink-bg) 0%, var(--ink-bg-deep) 100%);
+    font-family: 'Inter', sans-serif;
+    color: var(--text-dark);
+    min-height: 100vh;
+    padding: 48px 20px 80px;
+    overscroll-behavior-y: none;
+  }
+
+  .wrap {
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  .masthead {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 28px;
+    padding: 0 4px;
+  }
+
+  .masthead h1 {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 28px;
+    color: var(--paper);
+    margin: 0;
+    letter-spacing: 0.01em;
+  }
+
+  .masthead .month {
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--gold);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .stamp {
+    background: var(--paper);
+    border-radius: 3px;
+    box-shadow: 0 18px 40px -12px rgba(0,0,0,0.5);
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+
+  .stamp-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 28px 32px;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .stamp-total-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-mute);
+    margin-bottom: 6px;
+  }
+
+  .stamp-total {
+    font-family: 'Fraunces', serif;
+    font-size: 44px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text-dark);
+  }
+
+  .stamp-badge {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    border: 2px solid var(--gold);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--gold-deep);
+    text-align: center;
+    line-height: 1.3;
+    letter-spacing: 0.03em;
+    transform: rotate(-8deg);
+    flex-shrink: 0;
+  }
+
+  .card {
+    background: var(--paper);
+    border-radius: 3px;
+    box-shadow: 0 18px 40px -16px rgba(0,0,0,0.45);
+    padding: 28px 32px;
+    margin-bottom: 20px;
+  }
+
+  .card h2 {
+    font-family: 'Fraunces', serif;
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 18px 0;
+    color: var(--text-dark);
+  }
+
+  .cat-row {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .cat-row:last-child { border-bottom: none; }
+
+  .cat-row-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 8px;
+  }
+
+  .cat-name {
+    font-weight: 500;
+    font-size: 14px;
+    text-transform: capitalize;
+  }
+
+  .cat-amount {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .cat-amount.over { color: var(--brick); }
+
+  .bar-track {
+    height: 6px;
+    background: var(--paper-dim);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .bar-fill {
+    height: 100%;
+    background: var(--gold);
+    border-radius: 3px;
+  }
+  .bar-fill.over { background: var(--brick); }
+
+  .cat-budget-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--text-mute);
+    margin-top: 6px;
+  }
+  .cat-budget-label.over { color: var(--brick); }
+
+  .empty-note {
+    color: var(--text-mute);
+    font-size: 14px;
+    font-style: italic;
+  }
+
+  form.inline {
+    display: grid;
+    grid-template-columns: 90px 1fr 130px auto;
+    gap: 10px;
+  }
+
+  @media (max-width: 560px) {
+    form.inline { grid-template-columns: 1fr 1fr; }
+    form.inline button { grid-column: span 2; }
+    .budget-form { grid-template-columns: 1fr 1fr; }
+    .budget-form button { grid-column: span 2; }
+  }
+
+  input, button {
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    padding: 10px 12px;
+    border-radius: 3px;
+    border: 1px solid var(--hairline);
+    background: white;
+    color: var(--text-dark);
+    min-width: 0;
+    width: 100%;
+  }
+
+  input:focus, button:focus {
+    outline: 2px solid var(--gold);
+    outline-offset: 1px;
+  }
+
+  button {
+    background: var(--ink-bg);
+    color: var(--paper);
+    border: none;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background 0.15s ease;
+  }
+
+  button:hover { background: var(--ink-bg-deep); }
+
+  .budget-form {
+    display: grid;
+    grid-template-columns: 1fr 100px auto;
+    gap: 10px;
+    margin-top: 8px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  th {
+    text-align: left;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-mute);
+    font-weight: 500;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  td {
+    padding: 9px 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  td.amount {
+    font-family: 'IBM Plex Mono', monospace;
+    text-align: right;
+  }
+
+  td.cat {
+    text-transform: capitalize;
+    color: var(--text-mute);
+    font-size: 12px;
+  }
+
+  .footer-note {
+    text-align: center;
+    color: rgba(251,247,238,0.35);
+    font-size: 12px;
+    margin-top: 32px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <h1>Ledger</h1>
+    <div class="month">{{ month_label }}</div>
+  </div>
+
+  <div class="stamp">
+    <div class="stamp-inner">
+      <div>
+        <div class="stamp-total-label">Spent this month</div>
+        <div class="stamp-total">£{{ "%.2f"|format(total_all) }}</div>
+      </div>
+      <div class="stamp-badge">{{ expense_count }}<br>entries</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Log an expense</h2>
+    <form class="inline" action="/add" method="POST">
+      <input type="number" step="0.01" name="amount" placeholder="£0.00" required>
+      <input type="text" name="note" placeholder="What was it?" required>
+      <input type="text" name="category" placeholder="Category" required>
+      <button type="submit">Add</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>By category</h2>
+    {% if category_data %}
+      <div style="max-width: 260px; height: 260px; margin: 0 auto 24px;">
+        <canvas id="categoryChart"></canvas>
+      </div>
+      {% for c in category_data %}
+      <div class="cat-row">
+        <div class="cat-row-top">
+          <span class="cat-name">{{ c.name }}</span>
+          <span class="cat-amount {% if c.over_budget %}over{% endif %}">£{{ "%.2f"|format(c.total) }}</span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill {% if c.over_budget %}over{% endif %}" style="width: {{ [c.pct_of_spend, 100]|min }}%"></div>
+        </div>
+        {% if c.budget %}
+          <div class="cat-budget-label {% if c.over_budget %}over{% endif %}">
+            {{ "%.0f"|format(c.budget_pct) }}% of £{{ "%.2f"|format(c.budget) }} budget
+            {% if c.over_budget %} — over{% endif %}
+          </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="empty-note">Nothing logged yet this month — add your first expense above.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Set a budget</h2>
+    <form class="budget-form" action="/budget" method="POST">
+      <input type="text" name="category" placeholder="Category" required>
+      <input type="number" step="0.01" name="amount" placeholder="£/month" required>
+      <button type="submit">Set</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Recent entries</h2>
+    {% if recent %}
+    <table>
+      <tr><th>Date</th><th>Category</th><th>Note</th><th style="text-align:right">Amount</th><th></th></tr>
+      {% for r in recent %}
+      <tr>
+        <td>{{ r.date }}</td>
+        <td class="cat">{{ r.category }}</td>
+        <td>{{ r.note }}</td>
+        <td class="amount">£{{ "%.2f"|format(r.amount|float) }}</td>
+        <td style="text-align:right">
+          <form action="/delete/{{ r.id }}" method="POST" style="display:inline" onsubmit="return confirm('Delete this entry?');">
+            <button type="submit" style="background:none;color:var(--brick);border:none;padding:2px 6px;font-size:12px;box-shadow:none;">✕</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+      <p class="empty-note">No entries yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="footer-note">expenses.csv · budgets.json — stored locally in this folder</div>
+
+</div>
+
+{% if category_data %}
+<script>
+  const ctx = document.getElementById('categoryChart').getContext('2d');
+  new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: {{ chart_labels|tojson }},
+      datasets: [{
+        data: {{ chart_values|tojson }},
+        backgroundColor: ['#C79A44', '#3F6B4F', '#B0453D', '#6B8CA3', '#8C6BA3', '#A3826B', '#6BA38C'],
+        borderColor: '#FBF7EE',
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { font: { family: 'Inter', size: 11 }, color: '#1D2321', padding: 12 }
+        }
+      }
+    }
+  });
+</script>
+{% endif %}
+
+</body>
+</html>
