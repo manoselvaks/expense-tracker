@@ -36,6 +36,7 @@ if not app.secret_key:
 DATABASE_URL = os.environ.get("DATABASE_URL")
 MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
 MAIL_APP_PASSWORD = os.environ.get("MAIL_APP_PASSWORD")
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
 
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 
@@ -169,6 +170,17 @@ def login_required(view):
 
 def current_user_id():
     return session["user_id"]
+
+
+def admin_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if "user_id" not in session:
+            return redirect(url_for("login"))
+        if not ADMIN_EMAIL or session.get("email") != ADMIN_EMAIL:
+            return redirect(url_for("home"))
+        return view(*args, **kwargs)
+    return wrapped
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -347,6 +359,53 @@ def get_user_currency(uid):
     cur.close()
     conn.close()
     return row[0] if row else "GBP"
+
+
+@app.route("/admin")
+@admin_required
+def admin():
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT COUNT(*) FROM users")
+    total_users = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM expenses")
+    total_expenses = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM budgets")
+    total_budgets = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM recurring_expenses")
+    total_recurring = cur.fetchone()[0]
+
+    cur.execute("""
+        SELECT u.email, u.created_at, COUNT(e.id) AS expense_count
+        FROM users u
+        LEFT JOIN expenses e ON e.user_id = u.id
+        GROUP BY u.id, u.email, u.created_at
+        ORDER BY u.created_at DESC
+    """)
+    users = [
+        {"email": row[0], "created_at": row[1].strftime("%Y-%m-%d"), "expense_count": row[2]}
+        for row in cur.fetchall()
+    ]
+
+    cur.execute("SELECT COUNT(*) FROM expenses WHERE date >= CURRENT_DATE - INTERVAL '7 days'")
+    expenses_last_7_days = cur.fetchone()[0]
+
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "admin.html",
+        total_users=total_users,
+        total_expenses=total_expenses,
+        total_budgets=total_budgets,
+        total_recurring=total_recurring,
+        expenses_last_7_days=expenses_last_7_days,
+        users=users,
+    )
 
 
 @app.route("/settings", methods=["GET", "POST"])
@@ -641,6 +700,7 @@ def home():
         user_email=session.get("email"),
         show_claim_banner=has_unclaimed_data(),
         currency_symbol=CURRENCIES.get(get_user_currency(uid), "£"),
+        is_admin=(ADMIN_EMAIL and session.get("email") == ADMIN_EMAIL),
     )
 
 

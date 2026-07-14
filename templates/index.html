@@ -309,6 +309,10 @@
       &nbsp;·&nbsp;
       <a href="/settings" style="color:var(--gold); text-decoration:none; font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.05em;">Settings</a>
       &nbsp;·&nbsp;
+      {% if is_admin %}
+      <a href="/admin" style="color:var(--gold); text-decoration:none; font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.05em;">Admin</a>
+      &nbsp;·&nbsp;
+      {% endif %}
       <a href="/logout" style="color:var(--gold); text-decoration:none; font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.05em;">Log out</a>
       <div style="font-size:11px; color:rgba(251,247,238,0.5); margin-top:4px;">{{ user_email }}</div>
     </div>
