@@ -260,6 +260,56 @@ def set_budget(category, amount):
     conn.close()
 
 
+@app.route("/search")
+def search():
+    category = request.args.get("category", "")
+    keyword = request.args.get("keyword", "").strip()
+    start_date = request.args.get("start_date", "")
+    end_date = request.args.get("end_date", "")
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    query = "SELECT id, date, amount, category, note FROM expenses WHERE 1=1"
+    params = []
+
+    if category:
+        query += " AND LOWER(category) = LOWER(%s)"
+        params.append(category)
+    if keyword:
+        query += " AND note ILIKE %s"
+        params.append(f"%{keyword}%")
+    if start_date:
+        query += " AND date >= %s"
+        params.append(start_date)
+    if end_date:
+        query += " AND date <= %s"
+        params.append(end_date)
+
+    query += " ORDER BY date DESC, id DESC LIMIT 200"
+
+    cur.execute(query, params)
+    results = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    total = sum(float(r["amount"]) for r in results)
+    for r in results:
+        r["date"] = r["date"].strftime("%Y-%m-%d")
+        r["amount"] = float(r["amount"])
+
+    return render_template(
+        "search.html",
+        results=results,
+        total=total,
+        categories=BROAD_CATEGORIES,
+        selected_category=category,
+        keyword=keyword,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
 @app.route("/year")
 @app.route("/year/<int:year>")
 def year_view(year=None):
