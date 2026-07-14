@@ -373,6 +373,36 @@ def settings():
     )
 
 
+@app.route("/delete-account", methods=["POST"])
+@login_required
+def delete_account():
+    uid = current_user_id()
+    password = request.form.get("password", "")
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT password_hash FROM users WHERE id = %s", (uid,))
+    row = cur.fetchone()
+
+    if not row or not check_password_hash(row[0], password):
+        cur.close()
+        conn.close()
+        flash("Incorrect password — account was not deleted.")
+        return redirect(url_for("settings"))
+
+    cur.execute("DELETE FROM expenses WHERE user_id = %s", (uid,))
+    cur.execute("DELETE FROM budgets WHERE user_id = %s", (uid,))
+    cur.execute("DELETE FROM recurring_expenses WHERE user_id = %s", (uid,))
+    cur.execute("DELETE FROM users WHERE id = %s", (uid,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    session.clear()
+    flash("Your account and all data have been permanently deleted.")
+    return redirect(url_for("login"))
+
+
 @app.route("/logout")
 def logout():
     session.clear()
