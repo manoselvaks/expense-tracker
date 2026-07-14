@@ -141,7 +141,7 @@
     {% if category_data %}
       {% for c in category_data %}
       <div class="cat-row">
-        <span class="cat-name">{{ c.name }}</span>
+        <span class="cat-name">{{ category_icons.get(c.name, '') }} {{ c.name }}</span>
         <span class="cat-amount">£{{ "%.2f"|format(c.total) }}</span>
       </div>
       {% endfor %}

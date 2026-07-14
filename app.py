@@ -44,6 +44,19 @@ BROAD_CATEGORIES = [
     "subscriptions", "bills", "health", "travel", "other",
 ]
 
+CATEGORY_ICONS = {
+    "food": "🍔",
+    "transport": "🚗",
+    "shopping": "🛍️",
+    "entertainment": "🎬",
+    "subscriptions": "🔁",
+    "bills": "🧾",
+    "health": "💊",
+    "travel": "✈️",
+    "other": "📎",
+    "uncategorized": "❔",
+}
+
 
 def get_connection():
     return psycopg2.connect(DATABASE_URL)
@@ -545,6 +558,7 @@ def home():
         last_month_label=last_month_date.strftime("%B %Y"),
         month_change_pct=month_change_pct,
         categories=BROAD_CATEGORIES,
+        category_icons=CATEGORY_ICONS,
         user_email=session.get("email"),
         show_claim_banner=has_unclaimed_data(),
     )
@@ -570,7 +584,7 @@ def edit_form(expense_id):
         return redirect(url_for("home"))
     expense["date"] = expense["date"].strftime("%Y-%m-%d")
     expense["amount"] = float(expense["amount"])
-    return render_template("edit.html", expense=expense, categories=BROAD_CATEGORIES)
+    return render_template("edit.html", expense=expense, categories=BROAD_CATEGORIES, category_icons=CATEGORY_ICONS)
 
 
 @app.route("/update/<int:expense_id>", methods=["POST"])
@@ -680,6 +694,7 @@ def search():
         results=results,
         total=total,
         categories=BROAD_CATEGORIES,
+        category_icons=CATEGORY_ICONS,
         selected_category=category,
         keyword=keyword,
         start_date=start_date,
@@ -728,6 +743,7 @@ def year_view(year=None):
         monthly_totals=[round(m, 2) for m in monthly_totals],
         year_total=year_total,
         category_data=category_data,
+        category_icons=CATEGORY_ICONS,
         avg_month=avg_month,
         busiest_month=busiest_month,
         expense_count=len(year_rows),

@@ -101,7 +101,7 @@
           <select name="category">
             <option value="">All categories</option>
             {% for c in categories %}
-            <option value="{{ c }}" {% if c == selected_category %}selected{% endif %}>{{ c|capitalize }}</option>
+            <option value="{{ c }}" {% if c == selected_category %}selected{% endif %}>{{ category_icons.get(c, '') }} {{ c|capitalize }}</option>
             {% endfor %}
           </select>
         </div>
@@ -127,7 +127,7 @@
         {% for r in results %}
         <tr>
           <td>{{ r.date }}</td>
-          <td class="cat">{{ r.category }}</td>
+          <td class="cat">{{ category_icons.get(r.category, '') }} {{ r.category }}</td>
           <td>{{ r.note }}</td>
           <td class="amount">£{{ "%.2f"|format(r.amount) }}</td>
           <td style="text-align:right"><a href="/edit/{{ r.id }}" style="color:var(--text-mute); text-decoration:none; font-size:13px;">✎</a></td>

@@ -90,7 +90,7 @@
       <label>Category</label>
       <select name="category" required>
         {% for c in categories %}
-        <option value="{{ c }}" {% if c == expense.category %}selected{% endif %}>{{ c|capitalize }}</option>
+        <option value="{{ c }}" {% if c == expense.category %}selected{% endif %}>{{ category_icons.get(c, '') }} {{ c|capitalize }}</option>
         {% endfor %}
       </select>
 
