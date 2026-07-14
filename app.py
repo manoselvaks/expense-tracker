@@ -15,6 +15,9 @@ Render's Environment settings for the live version):
 import os
 import csv
 import io
+import secrets
+import smtplib
+from email.mime.text import MIMEText
 from datetime import datetime, timedelta
 from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, Response, session, flash
@@ -31,6 +34,8 @@ if not app.secret_key:
     raise RuntimeError("SECRET_KEY environment variable is required — set it in .env locally and in Render's Environment settings.")
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
+MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
+MAIL_APP_PASSWORD = os.environ.get("MAIL_APP_PASSWORD")
 
 BROAD_CATEGORIES = [
     "food", "transport", "shopping", "entertainment",
@@ -68,6 +73,10 @@ def init_db():
             created_at TIMESTAMP DEFAULT NOW()
         )
     """)
+    if not column_exists(cur, "users", "reset_token"):
+        cur.execute("ALTER TABLE users ADD COLUMN reset_token TEXT")
+    if not column_exists(cur, "users", "reset_token_expires"):
+        cur.execute("ALTER TABLE users ADD COLUMN reset_token_expires TIMESTAMP")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS expenses (
@@ -194,6 +203,109 @@ def login():
         return redirect(url_for("login"))
 
     return render_template("login.html")
+
+
+def send_email(to_address, subject, body):
+    if not MAIL_USERNAME or not MAIL_APP_PASSWORD:
+        print(f"[email not configured] Would have sent to {to_address}: {subject}")
+        return
+    msg = MIMEText(body)
+    msg["Subject"] = subject
+    msg["From"] = MAIL_USERNAME
+    msg["To"] = to_address
+
+    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        server.starttls()
+        server.login(MAIL_USERNAME, MAIL_APP_PASSWORD)
+        server.sendmail(MAIL_USERNAME, [to_address], msg.as_string())
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        email = request.form["email"].strip().lower()
+
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM users WHERE email = %s", (email,))
+        row = cur.fetchone()
+
+        if row:
+            token = secrets.token_urlsafe(32)
+            expires = datetime.now() + timedelta(hours=1)
+            cur.execute(
+                "UPDATE users SET reset_token = %s, reset_token_expires = %s WHERE id = %s",
+                (token, expires, row[0])
+            )
+            conn.commit()
+
+            reset_link = url_for("reset_password", token=token, _external=True)
+            send_email(
+                email,
+                "Reset your Ledger password",
+                f"Click this link to reset your password (valid for 1 hour):\n\n{reset_link}\n\n"
+                f"If you didn't request this, you can safely ignore this email."
+            )
+
+        cur.close()
+        conn.close()
+
+        # Always show the same message, whether or not the email exists —
+        # this avoids revealing which emails have accounts
+        flash("If an account exists for that email, a reset link has been sent.")
+        return redirect(url_for("login"))
+
+    return render_template("forgot_password.html")
+
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, reset_token_expires FROM users WHERE reset_token = %s",
+        (token,)
+    )
+    row = cur.fetchone()
+
+    if not row or row[1] < datetime.now():
+        cur.close()
+        conn.close()
+        flash("That reset link is invalid or has expired. Please request a new one.")
+        return redirect(url_for("forgot_password"))
+
+    user_id = row[0]
+
+    if request.method == "POST":
+        password = request.form["password"]
+        confirm = request.form["confirm"]
+
+        if password != confirm:
+            flash("Passwords don't match.")
+            cur.close()
+            conn.close()
+            return redirect(url_for("reset_password", token=token))
+        if len(password) < 8:
+            flash("Password must be at least 8 characters.")
+            cur.close()
+            conn.close()
+            return redirect(url_for("reset_password", token=token))
+
+        password_hash = generate_password_hash(password, method="pbkdf2:sha256")
+        cur.execute(
+            "UPDATE users SET password_hash = %s, reset_token = NULL, reset_token_expires = NULL WHERE id = %s",
+            (password_hash, user_id)
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        flash("Password updated — you can now log in.")
+        return redirect(url_for("login"))
+
+    cur.close()
+    conn.close()
+    return render_template("reset_password.html", token=token)
 
 
 @app.route("/logout")
