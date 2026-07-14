@@ -12,8 +12,10 @@ Locally, it's read from a .env file.
 """
 
 import os
+import csv
+import io
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, Response
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
@@ -258,6 +260,21 @@ def set_budget(category, amount):
     conn.commit()
     cur.close()
     conn.close()
+
+
+@app.route("/export")
+def export():
+    rows = read_expenses()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["date", "amount", "category", "note"])
+    for r in rows:
+        writer.writerow([r["date"].strftime("%Y-%m-%d"), r["amount"], r["category"], r["note"]])
+
+    response = Response(output.getvalue(), mimetype="text/csv")
+    filename = f"expenses_export_{datetime.now().strftime('%Y-%m-%d')}.csv"
+    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+    return response
 
 
 @app.route("/search")
