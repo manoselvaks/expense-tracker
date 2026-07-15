@@ -409,7 +409,7 @@
       <div class="cat-row" style="display:flex; justify-content:space-between; align-items:center;">
         <div>
           <span class="cat-name">{{ r.note }}</span>
-          <span style="color:var(--text-mute); font-size:12px;"> — {{ category_icons.get(r.category, '') }} {{ r.category }}</span>
+          <span style="color:var(--text-mute); font-size:12px; text-transform:capitalize;"> — {{ category_icons.get(r.category, '') }} {{ r.category }}</span>
         </div>
         <div style="display:flex; align-items:center; gap:10px;">
           <span class="cat-amount">{{ currency_symbol }}{{ "%.2f"|format(r.amount) }}</span>

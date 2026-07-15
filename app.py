@@ -599,6 +599,13 @@ def add_recurring(uid, category, amount, note):
 def delete_recurring(uid, recurring_id):
     conn = get_connection()
     cur = conn.cursor()
+    # Unlink any past expenses that were auto-logged from this recurring
+    # template — keeps your actual spending history intact, just detaches
+    # it from the template so the template itself can be safely deleted.
+    cur.execute(
+        "UPDATE expenses SET recurring_id = NULL WHERE recurring_id = %s AND user_id = %s",
+        (recurring_id, uid)
+    )
     cur.execute("DELETE FROM recurring_expenses WHERE id = %s AND user_id = %s", (recurring_id, uid))
     conn.commit()
     cur.close()
