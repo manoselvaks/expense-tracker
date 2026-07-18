@@ -967,6 +967,24 @@ def year_view(year=None):
         for cat, total in sorted(totals_by_category.items(), key=lambda x: -x[1])
     ]
 
+    # Build per-category monthly totals for a stacked bar chart, ordered
+    # by total spend (biggest category first, same order as the list below)
+    category_order = [c["name"] for c in category_data]
+    monthly_by_category = {cat: [0.0] * 12 for cat in category_order}
+    for r in year_rows:
+        month_idx = r["date"].month - 1
+        monthly_by_category[r["category"]][month_idx] += float(r["amount"])
+
+    palette = ["#C79A44", "#3F6B4F", "#B0453D", "#6B8CA3", "#8C6BA3", "#A3826B", "#6BA38C", "#A38C6B", "#6B6BA3"]
+    stacked_datasets = [
+        {
+            "label": cat.capitalize(),
+            "data": [round(v, 2) for v in monthly_by_category[cat]],
+            "backgroundColor": palette[i % len(palette)],
+        }
+        for i, cat in enumerate(category_order)
+    ]
+
     avg_month = year_total / 12
     busiest_month_idx = monthly_totals.index(max(monthly_totals)) if year_total > 0 else None
     busiest_month = month_names[busiest_month_idx] if busiest_month_idx is not None else None
@@ -979,6 +997,7 @@ def year_view(year=None):
         year_total=year_total,
         category_data=category_data,
         category_icons=CATEGORY_ICONS,
+        stacked_datasets=stacked_datasets,
         avg_month=avg_month,
         busiest_month=busiest_month,
         expense_count=len(year_rows),

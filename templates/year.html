@@ -128,7 +128,7 @@
   <div class="card">
     <h2>Spending by month</h2>
     {% if year_total > 0 %}
-      <div style="height: 220px;">
+      <div style="height: 280px;">
         <canvas id="monthlyChart"></canvas>
       </div>
     {% else %}
@@ -161,18 +161,20 @@
     type: 'bar',
     data: {
       labels: {{ month_names|tojson }},
-      datasets: [{
-        data: {{ monthly_totals|tojson }},
-        backgroundColor: '#C79A44',
-        borderRadius: 3,
-      }]
+      datasets: {{ stacked_datasets|tojson }}.map(d => ({...d, borderRadius: 2}))
     },
     options: {
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'bottom',
+          labels: { font: { family: 'Inter', size: 11 }, color: '#1D2321', boxWidth: 12, padding: 10 }
+        }
+      },
       scales: {
-        y: { beginAtZero: true, ticks: { font: { family: 'IBM Plex Mono', size: 10 } } },
-        x: { ticks: { font: { family: 'IBM Plex Mono', size: 10 } } }
+        y: { stacked: true, beginAtZero: true, ticks: { font: { family: 'IBM Plex Mono', size: 10 } } },
+        x: { stacked: true, ticks: { font: { family: 'IBM Plex Mono', size: 10 } } }
       }
     }
   });
