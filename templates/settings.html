@@ -70,6 +70,9 @@
       {% endif %}
     {% endwith %}
     <h2>Currency</h2>
+    <p style="font-size:13px; color:var(--text-mute); margin:0 0 16px 0; line-height:1.5;">
+      Each currency keeps its own separate history. Switching shows a fresh start for that currency — switch back anytime and your other currency's expenses, budgets, and recurring items are exactly as you left them.
+    </p>
     <form method="POST" action="/settings">
       <label>Display currency</label>
       <select name="currency">

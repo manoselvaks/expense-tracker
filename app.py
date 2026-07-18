@@ -69,6 +69,28 @@ CURRENCIES = {
     "CHF": "CHF ",
     "CNY": "¥",
     "NZD": "NZ$",
+    "SGD": "S$",
+    "HKD": "HK$",
+    "ZAR": "R",
+    "BRL": "R$",
+    "MXN": "Mex$",
+    "KRW": "₩",
+    "SEK": "kr",
+    "NOK": "kr",
+    "DKK": "kr",
+    "PLN": "zł",
+    "AED": "AED ",
+    "SAR": "SAR ",
+    "THB": "฿",
+    "IDR": "Rp",
+    "PHP": "₱",
+    "TRY": "₺",
+    "PKR": "₨",
+    "BDT": "৳",
+    "NGN": "₦",
+    "EGP": "E£",
+    "VND": "₫",
+    "MYR": "RM",
 }
 
 
@@ -122,6 +144,12 @@ def init_db():
         cur.execute("ALTER TABLE expenses ADD COLUMN user_id INTEGER REFERENCES users(id)")
     if not column_exists(cur, "expenses", "recurring_id"):
         cur.execute("ALTER TABLE expenses ADD COLUMN recurring_id INTEGER")
+    if not column_exists(cur, "expenses", "currency"):
+        cur.execute("ALTER TABLE expenses ADD COLUMN currency TEXT")
+        cur.execute("""
+            UPDATE expenses SET currency = users.currency
+            FROM users WHERE users.id = expenses.user_id AND expenses.currency IS NULL
+        """)
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS budgets (
@@ -131,12 +159,20 @@ def init_db():
     """)
     if not column_exists(cur, "budgets", "user_id"):
         cur.execute("ALTER TABLE budgets ADD COLUMN user_id INTEGER REFERENCES users(id)")
+    if not column_exists(cur, "budgets", "currency"):
+        cur.execute("ALTER TABLE budgets ADD COLUMN currency TEXT")
+        cur.execute("""
+            UPDATE budgets SET currency = users.currency
+            FROM users WHERE users.id = budgets.user_id AND budgets.currency IS NULL
+        """)
     if constraint_exists(cur, "budgets_pkey"):
         cur.execute("ALTER TABLE budgets DROP CONSTRAINT budgets_pkey")
-    if not constraint_exists(cur, "budgets_user_category_unique"):
+    if constraint_exists(cur, "budgets_user_category_unique"):
+        cur.execute("ALTER TABLE budgets DROP CONSTRAINT budgets_user_category_unique")
+    if not constraint_exists(cur, "budgets_user_category_currency_unique"):
         cur.execute("""
             ALTER TABLE budgets
-            ADD CONSTRAINT budgets_user_category_unique UNIQUE (user_id, category)
+            ADD CONSTRAINT budgets_user_category_currency_unique UNIQUE (user_id, category, currency)
         """)
 
     cur.execute("""
@@ -149,6 +185,12 @@ def init_db():
     """)
     if not column_exists(cur, "recurring_expenses", "user_id"):
         cur.execute("ALTER TABLE recurring_expenses ADD COLUMN user_id INTEGER REFERENCES users(id)")
+    if not column_exists(cur, "recurring_expenses", "currency"):
+        cur.execute("ALTER TABLE recurring_expenses ADD COLUMN currency TEXT")
+        cur.execute("""
+            UPDATE recurring_expenses SET currency = users.currency
+            FROM users WHERE users.id = recurring_expenses.user_id AND recurring_expenses.currency IS NULL
+        """)
 
     conn.commit()
     cur.close()
@@ -413,15 +455,15 @@ def admin():
 def settings():
     uid = current_user_id()
     if request.method == "POST":
-        currency = request.form["currency"]
-        if currency in CURRENCIES:
+        new_currency = request.form["currency"]
+        if new_currency in CURRENCIES:
             conn = get_connection()
             cur = conn.cursor()
-            cur.execute("UPDATE users SET currency = %s WHERE id = %s", (currency, uid))
+            cur.execute("UPDATE users SET currency = %s WHERE id = %s", (new_currency, uid))
             conn.commit()
             cur.close()
             conn.close()
-            flash("Currency updated.")
+            flash(f"Currency switched to {new_currency}. Your {new_currency} history starts fresh — switch back anytime to see your other currency's data untouched.")
         return redirect(url_for("settings"))
 
     return render_template(
@@ -502,7 +544,12 @@ def has_unclaimed_data():
 def read_expenses(uid):
     conn = get_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("SELECT id, date, amount, category, note FROM expenses WHERE user_id = %s ORDER BY date DESC, id DESC", (uid,))
+    cur.execute("""
+        SELECT e.id, e.date, e.amount, e.category, e.note FROM expenses e
+        JOIN users u ON u.id = e.user_id
+        WHERE e.user_id = %s AND e.currency = u.currency
+        ORDER BY e.date DESC, e.id DESC
+    """, (uid,))
     rows = cur.fetchall()
     cur.close()
     conn.close()
@@ -510,11 +557,12 @@ def read_expenses(uid):
 
 
 def add_expense(uid, amount, note, category):
+    currency = get_user_currency(uid)
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO expenses (date, amount, category, note, user_id) VALUES (%s, %s, %s, %s, %s)",
-        (datetime.now().date(), round(float(amount), 2), category, note, uid)
+        "INSERT INTO expenses (date, amount, category, note, user_id, currency) VALUES (%s, %s, %s, %s, %s, %s)",
+        (datetime.now().date(), round(float(amount), 2), category, note, uid, currency)
     )
     conn.commit()
     cur.close()
@@ -555,7 +603,11 @@ def delete_expense(uid, expense_id):
 def load_budgets(uid):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT category, amount FROM budgets WHERE user_id = %s", (uid,))
+    cur.execute("""
+        SELECT b.category, b.amount FROM budgets b
+        JOIN users u ON u.id = b.user_id
+        WHERE b.user_id = %s AND b.currency = u.currency
+    """, (uid,))
     rows = cur.fetchall()
     cur.close()
     conn.close()
@@ -563,12 +615,23 @@ def load_budgets(uid):
 
 
 def set_budget(uid, category, amount):
+    currency = get_user_currency(uid)
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO budgets (category, amount, user_id) VALUES (%s, %s, %s)
-        ON CONFLICT (user_id, category) DO UPDATE SET amount = EXCLUDED.amount
-    """, (category, round(float(amount), 2), uid))
+        INSERT INTO budgets (category, amount, user_id, currency) VALUES (%s, %s, %s, %s)
+        ON CONFLICT (user_id, category, currency) DO UPDATE SET amount = EXCLUDED.amount
+    """, (category, round(float(amount), 2), uid, currency))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def delete_budget(uid, category):
+    currency = get_user_currency(uid)
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM budgets WHERE user_id = %s AND category = %s AND currency = %s", (uid, category, currency))
     conn.commit()
     cur.close()
     conn.close()
@@ -577,7 +640,12 @@ def set_budget(uid, category, amount):
 def get_recurring(uid):
     conn = get_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("SELECT id, category, amount, note FROM recurring_expenses WHERE user_id = %s ORDER BY id", (uid,))
+    cur.execute("""
+        SELECT r.id, r.category, r.amount, r.note FROM recurring_expenses r
+        JOIN users u ON u.id = r.user_id
+        WHERE r.user_id = %s AND r.currency = u.currency
+        ORDER BY r.id
+    """, (uid,))
     rows = cur.fetchall()
     cur.close()
     conn.close()
@@ -585,11 +653,12 @@ def get_recurring(uid):
 
 
 def add_recurring(uid, category, amount, note):
+    currency = get_user_currency(uid)
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO recurring_expenses (category, amount, note, user_id) VALUES (%s, %s, %s, %s)",
-        (category, round(float(amount), 2), note, uid)
+        "INSERT INTO recurring_expenses (category, amount, note, user_id, currency) VALUES (%s, %s, %s, %s, %s)",
+        (category, round(float(amount), 2), note, uid, currency)
     )
     conn.commit()
     cur.close()
@@ -613,9 +682,13 @@ def delete_recurring(uid, recurring_id):
 
 
 def ensure_recurring_logged(uid):
+    currency = get_user_currency(uid)
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT id, category, amount, note FROM recurring_expenses WHERE user_id = %s", (uid,))
+    cur.execute(
+        "SELECT id, category, amount, note FROM recurring_expenses WHERE user_id = %s AND currency = %s",
+        (uid, currency)
+    )
     templates = cur.fetchall()
 
     for rid, category, amount, note in templates:
@@ -628,8 +701,8 @@ def ensure_recurring_logged(uid):
 
         if not already_logged:
             cur.execute(
-                "INSERT INTO expenses (date, amount, category, note, recurring_id, user_id) VALUES (%s, %s, %s, %s, %s, %s)",
-                (datetime.now().date(), amount, category, note, rid, uid)
+                "INSERT INTO expenses (date, amount, category, note, recurring_id, user_id, currency) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (datetime.now().date(), amount, category, note, rid, uid, currency)
             )
 
     conn.commit()
@@ -708,6 +781,7 @@ def home():
         show_claim_banner=has_unclaimed_data(),
         currency_symbol=CURRENCIES.get(get_user_currency(uid), "£"),
         is_admin=(ADMIN_EMAIL and session.get("email") == ADMIN_EMAIL),
+        all_budgets=[{"category": c, "amount": a} for c, a in budgets.items()],
     )
 
 
@@ -751,6 +825,15 @@ def update(expense_id):
 @login_required
 def delete(expense_id):
     delete_expense(current_user_id(), expense_id)
+    return redirect(url_for("home"))
+
+
+@app.route("/budget/delete", methods=["POST"])
+@login_required
+def budget_delete():
+    uid = current_user_id()
+    category = request.form["category"]
+    delete_budget(uid, category)
     return redirect(url_for("home"))
 
 
@@ -808,7 +891,11 @@ def search():
     conn = get_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    query = "SELECT id, date, amount, category, note FROM expenses WHERE user_id = %s"
+    query = """
+        SELECT e.id, e.date, e.amount, e.category, e.note FROM expenses e
+        JOIN users u ON u.id = e.user_id
+        WHERE e.user_id = %s AND e.currency = u.currency
+    """
     params = [uid]
 
     if category:

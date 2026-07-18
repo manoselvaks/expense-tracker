@@ -445,6 +445,23 @@
       <input type="number" step="0.01" name="amount" placeholder="{{ currency_symbol }}/month" required>
       <button type="submit">Set</button>
     </form>
+
+    {% if all_budgets %}
+    <div style="margin-top:18px; padding-top:16px; border-top:1px solid var(--hairline);">
+      {% for b in all_budgets %}
+      <div class="cat-row" style="display:flex; justify-content:space-between; align-items:center;">
+        <span class="cat-name">{{ category_icons.get(b.category, '') }} {{ b.category|capitalize }}</span>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="cat-amount">{{ currency_symbol }}{{ "%.2f"|format(b.amount) }}/mo</span>
+          <form action="/budget/delete" method="POST" id="budget-delete-{{ b.category }}">
+            <input type="hidden" name="category" value="{{ b.category }}">
+            <button type="button" onclick="showConfirmModal('budget-delete-{{ b.category }}', 'Remove budget for {{ b.category }}?')" style="background:none;color:var(--brick);border:none;padding:2px 6px;font-size:12px;box-shadow:none;">✕</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
 
   <div class="card">
