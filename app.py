@@ -17,6 +17,7 @@ import csv
 import io
 import secrets
 import smtplib
+import calendar
 from email.mime.text import MIMEText
 from datetime import datetime, timedelta
 from functools import wraps
@@ -193,6 +194,8 @@ def init_db():
             UPDATE recurring_expenses SET currency = users.currency
             FROM users WHERE users.id = recurring_expenses.user_id AND recurring_expenses.currency IS NULL
         """)
+    if not column_exists(cur, "recurring_expenses", "payment_method"):
+        cur.execute("ALTER TABLE recurring_expenses ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'debit'")
 
     conn.commit()
     cur.close()
@@ -643,7 +646,7 @@ def get_recurring(uid):
     conn = get_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
-        SELECT r.id, r.category, r.amount, r.note FROM recurring_expenses r
+        SELECT r.id, r.category, r.amount, r.note, r.payment_method FROM recurring_expenses r
         JOIN users u ON u.id = r.user_id
         WHERE r.user_id = %s AND r.currency = u.currency
         ORDER BY r.id
@@ -654,13 +657,25 @@ def get_recurring(uid):
     return rows
 
 
-def add_recurring(uid, category, amount, note):
+def add_recurring(uid, category, amount, note, payment_method="debit"):
     currency = get_user_currency(uid)
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO recurring_expenses (category, amount, note, user_id, currency) VALUES (%s, %s, %s, %s, %s)",
-        (category, round(float(amount), 2), note, uid, currency)
+        "INSERT INTO recurring_expenses (category, amount, note, user_id, currency, payment_method) VALUES (%s, %s, %s, %s, %s, %s)",
+        (category, round(float(amount), 2), note, uid, currency, payment_method)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def update_recurring_payment_method(uid, recurring_id, payment_method):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE recurring_expenses SET payment_method = %s WHERE id = %s AND user_id = %s",
+        (payment_method, recurring_id, uid)
     )
     conn.commit()
     cur.close()
@@ -688,12 +703,12 @@ def ensure_recurring_logged(uid):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "SELECT id, category, amount, note FROM recurring_expenses WHERE user_id = %s AND currency = %s",
+        "SELECT id, category, amount, note, payment_method FROM recurring_expenses WHERE user_id = %s AND currency = %s",
         (uid, currency)
     )
     templates = cur.fetchall()
 
-    for rid, category, amount, note in templates:
+    for rid, category, amount, note, payment_method in templates:
         cur.execute("""
             SELECT 1 FROM expenses
             WHERE recurring_id = %s AND user_id = %s
@@ -703,8 +718,8 @@ def ensure_recurring_logged(uid):
 
         if not already_logged:
             cur.execute(
-                "INSERT INTO expenses (date, amount, category, note, recurring_id, user_id, currency) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (datetime.now().date(), amount, category, note, rid, uid, currency)
+                "INSERT INTO expenses (date, amount, category, note, recurring_id, user_id, currency, payment_method) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (datetime.now().date(), amount, category, note, rid, uid, currency, payment_method)
             )
 
     conn.commit()
@@ -767,6 +782,11 @@ def home():
     else:
         month_change_pct = None
 
+    days_elapsed = datetime.now().day
+    daily_avg = total_all / days_elapsed if days_elapsed > 0 else 0
+    days_in_month = calendar.monthrange(datetime.now().year, datetime.now().month)[1]
+    projected_month_total = daily_avg * days_in_month
+
     return render_template(
         "index.html",
         total_all=total_all,
@@ -789,6 +809,8 @@ def home():
         all_budgets=[{"category": c, "amount": a} for c, a in budgets.items()],
         credit_total=credit_total,
         debit_total=debit_total,
+        daily_avg=daily_avg,
+        projected_month_total=projected_month_total,
     )
 
 
@@ -861,6 +883,16 @@ def recurring_add():
         category=request.form["category"],
         amount=request.form["amount"],
         note=request.form["note"],
+        payment_method=request.form.get("payment_method", "debit"),
+    )
+    return redirect(url_for("home"))
+
+
+@app.route("/recurring/update-payment/<int:recurring_id>", methods=["POST"])
+@login_required
+def recurring_update_payment(recurring_id):
+    update_recurring_payment_method(
+        current_user_id(), recurring_id, request.form["payment_method"]
     )
     return redirect(url_for("home"))
 
