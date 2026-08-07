@@ -97,6 +97,12 @@
       <label>Note</label>
       <input type="text" name="note" value="{{ expense.note }}" required>
 
+      <label>Payment method</label>
+      <select name="payment_method" required>
+        <option value="debit" {% if expense.payment_method == 'debit' %}selected{% endif %}>💳 Debit Card</option>
+        <option value="credit" {% if expense.payment_method == 'credit' %}selected{% endif %}>💰 Credit Card</option>
+      </select>
+
       <div class="btn-row">
         <a href="/" class="btn-link btn-cancel">Cancel</a>
         <button type="submit" class="btn-save">Save changes</button>

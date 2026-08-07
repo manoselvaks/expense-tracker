@@ -150,6 +150,8 @@ def init_db():
             UPDATE expenses SET currency = users.currency
             FROM users WHERE users.id = expenses.user_id AND expenses.currency IS NULL
         """)
+    if not column_exists(cur, "expenses", "payment_method"):
+        cur.execute("ALTER TABLE expenses ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'debit'")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS budgets (
@@ -545,7 +547,7 @@ def read_expenses(uid):
     conn = get_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
-        SELECT e.id, e.date, e.amount, e.category, e.note FROM expenses e
+        SELECT e.id, e.date, e.amount, e.category, e.note, e.payment_method FROM expenses e
         JOIN users u ON u.id = e.user_id
         WHERE e.user_id = %s AND e.currency = u.currency
         ORDER BY e.date DESC, e.id DESC
@@ -556,13 +558,13 @@ def read_expenses(uid):
     return rows
 
 
-def add_expense(uid, amount, note, category):
+def add_expense(uid, amount, note, category, payment_method="debit"):
     currency = get_user_currency(uid)
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO expenses (date, amount, category, note, user_id, currency) VALUES (%s, %s, %s, %s, %s, %s)",
-        (datetime.now().date(), round(float(amount), 2), category, note, uid, currency)
+        "INSERT INTO expenses (date, amount, category, note, user_id, currency, payment_method) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        (datetime.now().date(), round(float(amount), 2), category, note, uid, currency, payment_method)
     )
     conn.commit()
     cur.close()
@@ -572,19 +574,19 @@ def add_expense(uid, amount, note, category):
 def get_expense(uid, expense_id):
     conn = get_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("SELECT id, date, amount, category, note FROM expenses WHERE id = %s AND user_id = %s", (expense_id, uid))
+    cur.execute("SELECT id, date, amount, category, note, payment_method FROM expenses WHERE id = %s AND user_id = %s", (expense_id, uid))
     row = cur.fetchone()
     cur.close()
     conn.close()
     return row
 
 
-def update_expense(uid, expense_id, amount, note, category, date):
+def update_expense(uid, expense_id, amount, note, category, date, payment_method):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "UPDATE expenses SET amount = %s, note = %s, category = %s, date = %s WHERE id = %s AND user_id = %s",
-        (round(float(amount), 2), note, category, date, expense_id, uid)
+        "UPDATE expenses SET amount = %s, note = %s, category = %s, date = %s, payment_method = %s WHERE id = %s AND user_id = %s",
+        (round(float(amount), 2), note, category, date, payment_method, expense_id, uid)
     )
     conn.commit()
     cur.close()
@@ -738,6 +740,9 @@ def home():
 
     budgets = load_budgets(uid)
 
+    credit_total = sum(float(r["amount"]) for r in filtered if r["payment_method"] == "credit")
+    debit_total = sum(float(r["amount"]) for r in filtered if r["payment_method"] == "debit")
+
     category_data = []
     for category, total in sorted(totals_by_category.items(), key=lambda x: -x[1]):
         pct_of_spend = (total / total_all * 100) if total_all > 0 else 0
@@ -782,6 +787,8 @@ def home():
         currency_symbol=CURRENCIES.get(get_user_currency(uid), "£"),
         is_admin=(ADMIN_EMAIL and session.get("email") == ADMIN_EMAIL),
         all_budgets=[{"category": c, "amount": a} for c, a in budgets.items()],
+        credit_total=credit_total,
+        debit_total=debit_total,
     )
 
 
@@ -793,6 +800,7 @@ def add():
         amount=request.form["amount"],
         note=request.form["note"],
         category=request.form["category"],
+        payment_method=request.form.get("payment_method", "debit"),
     )
     return redirect(url_for("home"))
 
@@ -817,6 +825,7 @@ def update(expense_id):
         note=request.form["note"],
         category=request.form["category"],
         date=request.form["date"],
+        payment_method=request.form.get("payment_method", "debit"),
     )
     return redirect(url_for("home"))
 

@@ -207,6 +207,15 @@
     gap: 10px;
   }
 
+  form.expense-form {
+    grid-template-columns: 90px 1fr 130px 120px auto;
+  }
+
+  @media (max-width: 640px) {
+    form.expense-form { grid-template-columns: 1fr 1fr; }
+    form.expense-form button { grid-column: span 2; }
+  }
+
   @media (max-width: 560px) {
     form.inline { grid-template-columns: 1fr 1fr; }
     form.inline button { grid-column: span 2; }
@@ -362,13 +371,17 @@
 
   <div class="card">
     <h2>Log an expense</h2>
-    <form class="inline" action="/add" method="POST">
+    <form class="inline expense-form" action="/add" method="POST">
       <input type="number" step="0.01" name="amount" placeholder="{{ currency_symbol }}0.00" required>
       <input type="text" name="note" placeholder="What was it?" required>
       <select name="category" required>
         {% for c in categories %}
         <option value="{{ c }}">{{ category_icons.get(c, '') }} {{ c|capitalize }}</option>
         {% endfor %}
+      </select>
+      <select name="payment_method" required>
+        <option value="debit">💳 Debit</option>
+        <option value="credit">💰 Credit</option>
       </select>
       <button type="submit">Add</button>
     </form>
@@ -399,6 +412,33 @@
       {% endfor %}
     {% else %}
       <p class="empty-note">Nothing logged yet this month — add your first expense above.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Credit vs Debit</h2>
+    {% set card_total = credit_total + debit_total %}
+    {% if card_total > 0 %}
+      <div class="cat-row">
+        <div class="cat-row-top">
+          <span class="cat-name">💰 Credit Card</span>
+          <span class="cat-amount">{{ currency_symbol }}{{ "%.2f"|format(credit_total) }}</span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill" style="width: {{ (credit_total / card_total * 100) if card_total > 0 else 0 }}%; background: var(--brick);"></div>
+        </div>
+      </div>
+      <div class="cat-row">
+        <div class="cat-row-top">
+          <span class="cat-name">💳 Debit Card</span>
+          <span class="cat-amount">{{ currency_symbol }}{{ "%.2f"|format(debit_total) }}</span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill" style="width: {{ (debit_total / card_total * 100) if card_total > 0 else 0 }}%; background: var(--forest);"></div>
+        </div>
+      </div>
+    {% else %}
+      <p class="empty-note">Nothing logged yet this month.</p>
     {% endif %}
   </div>
 
@@ -468,12 +508,13 @@
     <h2>Recent entries</h2>
     {% if recent %}
     <table>
-      <tr><th>Date</th><th>Category</th><th>Note</th><th style="text-align:right">Amount</th><th></th></tr>
+      <tr><th>Date</th><th>Category</th><th>Note</th><th></th><th style="text-align:right">Amount</th><th></th></tr>
       {% for r in recent %}
       <tr>
         <td>{{ r.date }}</td>
         <td class="cat">{{ category_icons.get(r.category, '') }} {{ r.category }}</td>
         <td>{{ r.note }}</td>
+        <td style="text-align:center; font-size:13px;" title="{{ 'Credit Card' if r.payment_method == 'credit' else 'Debit Card' }}">{{ '💰' if r.payment_method == 'credit' else '💳' }}</td>
         <td class="amount">{{ currency_symbol }}{{ "%.2f"|format(r.amount|float) }}</td>
         <td style="text-align:right; white-space:nowrap;">
           <a href="/edit/{{ r.id }}" style="color:var(--text-mute); text-decoration:none; font-size:13px; padding:2px 6px;">✎</a>
