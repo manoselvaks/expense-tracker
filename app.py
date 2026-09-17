@@ -18,10 +18,11 @@ import io
 import secrets
 import smtplib
 import calendar
+import hmac
 from email.mime.text import MIMEText
 from datetime import datetime, timedelta
 from functools import wraps
-from flask import Flask, render_template, request, redirect, url_for, Response, session, flash
+from flask import Flask, render_template, request, redirect, url_for, Response, session, flash, jsonify
 import psycopg2
 import psycopg2.extras
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -38,6 +39,9 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
 MAIL_APP_PASSWORD = os.environ.get("MAIL_APP_PASSWORD")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+# Read-only API for the AI OS dashboard. Both must be set for /api/summary to work.
+DASHBOARD_API_TOKEN = os.environ.get("DASHBOARD_API_TOKEN", "").strip()
+DASHBOARD_API_EMAIL = os.environ.get("DASHBOARD_API_EMAIL", "").strip().lower()
 
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 
@@ -1044,6 +1048,153 @@ def year_view(year=None):
         expense_count=len(year_rows),
         currency_symbol=CURRENCIES.get(get_user_currency(uid), "£"),
     )
+
+
+
+# ----------------------------------------------------------------------
+# Read-only JSON API for the AI OS dashboard
+# ----------------------------------------------------------------------
+#
+# GET /api/summary
+# Header: Authorization: Bearer <DASHBOARD_API_TOKEN>
+#
+# Returns the same numbers the home page shows, for the single account named
+# in DASHBOARD_API_EMAIL. Nothing here can create, edit or delete data.
+
+def _api_user_id():
+    if not DASHBOARD_API_EMAIL:
+        return None
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE email = %s", (DASHBOARD_API_EMAIL,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row[0] if row else None
+
+
+def _api_authorized():
+    if not DASHBOARD_API_TOKEN:
+        return False
+    header = request.headers.get("Authorization", "")
+    if not header.startswith("Bearer "):
+        return False
+    supplied = header[len("Bearer "):].strip()
+    return hmac.compare_digest(supplied, DASHBOARD_API_TOKEN)
+
+
+@app.route("/api/summary")
+def api_summary():
+    if not _api_authorized():
+        return jsonify({"error": "unauthorized"}), 401
+
+    uid = _api_user_id()
+    if uid is None:
+        return jsonify({"error": "DASHBOARD_API_EMAIL does not match a user"}), 404
+
+    ensure_recurring_logged(uid)
+    rows = read_expenses(uid)
+    now = datetime.now()
+    today = now.date()
+    this_month = now.strftime("%Y-%m")
+
+    first_of_this_month = now.replace(day=1)
+    last_month_date = first_of_this_month - timedelta(days=1)
+    last_month = last_month_date.strftime("%Y-%m")
+
+    month_rows = [r for r in rows if r["date"].strftime("%Y-%m") == this_month]
+    last_month_rows = [r for r in rows if r["date"].strftime("%Y-%m") == last_month]
+
+    total_all = sum(float(r["amount"]) for r in month_rows)
+    last_month_total = sum(float(r["amount"]) for r in last_month_rows)
+
+    totals_by_category = {}
+    for r in month_rows:
+        totals_by_category[r["category"]] = totals_by_category.get(r["category"], 0.0) + float(r["amount"])
+
+    budgets = load_budgets(uid)
+    category_data = []
+    for category, total in sorted(totals_by_category.items(), key=lambda x: -x[1]):
+        budget = budgets.get(category)
+        category_data.append({
+            "name": category,
+            "icon": CATEGORY_ICONS.get(category, CATEGORY_ICONS["other"]),
+            "total": round(total, 2),
+            "pct_of_spend": round((total / total_all * 100), 1) if total_all > 0 else 0,
+            "budget": budget,
+            "budget_pct": round((total / budget * 100), 1) if budget else None,
+            "over_budget": budget is not None and total > budget,
+        })
+
+    # Budgets that have no spend yet this month still matter for the dashboard.
+    for category, budget in budgets.items():
+        if category not in totals_by_category:
+            category_data.append({
+                "name": category,
+                "icon": CATEGORY_ICONS.get(category, CATEGORY_ICONS["other"]),
+                "total": 0.0, "pct_of_spend": 0,
+                "budget": budget, "budget_pct": 0.0, "over_budget": False,
+            })
+
+    # Daily spend for the last 14 days, oldest first, zero-filled.
+    daily = []
+    for i in range(13, -1, -1):
+        day = today - timedelta(days=i)
+        daily.append({
+            "date": day.isoformat(),
+            "total": round(sum(float(r["amount"]) for r in rows if r["date"] == day), 2),
+        })
+
+    days_elapsed = now.day
+    days_in_month = calendar.monthrange(now.year, now.month)[1]
+    daily_avg = total_all / days_elapsed if days_elapsed > 0 else 0.0
+
+    currency = get_user_currency(uid)
+    total_budget = sum(budgets.values()) if budgets else None
+
+    return jsonify({
+        "generated_at": now.isoformat(),
+        "currency": currency,
+        "currency_symbol": CURRENCIES.get(currency, "£"),
+        "month": {
+            "label": now.strftime("%B %Y"),
+            "total": round(total_all, 2),
+            "expense_count": len(month_rows),
+            "credit_total": round(sum(float(r["amount"]) for r in month_rows if r["payment_method"] == "credit"), 2),
+            "debit_total": round(sum(float(r["amount"]) for r in month_rows if r["payment_method"] == "debit"), 2),
+            "daily_avg": round(daily_avg, 2),
+            "projected_total": round(daily_avg * days_in_month, 2),
+            "days_elapsed": days_elapsed,
+            "days_in_month": days_in_month,
+            "total_budget": total_budget,
+        },
+        "last_month": {
+            "label": last_month_date.strftime("%B %Y"),
+            "total": round(last_month_total, 2),
+            "change_pct": round(((total_all - last_month_total) / last_month_total) * 100, 1) if last_month_total > 0 else None,
+        },
+        "categories": category_data,
+        "daily": daily,
+        "recent": [
+            {
+                "id": r["id"],
+                "date": r["date"].isoformat(),
+                "amount": float(r["amount"]),
+                "category": r["category"],
+                "icon": CATEGORY_ICONS.get(r["category"], CATEGORY_ICONS["other"]),
+                "note": r["note"],
+                "payment_method": r["payment_method"],
+            }
+            for r in rows[:10]
+        ],
+        "recurring": [
+            {
+                "id": r["id"], "category": r["category"], "amount": float(r["amount"]),
+                "note": r["note"], "payment_method": r["payment_method"],
+            }
+            for r in get_recurring(uid)
+        ],
+    })
 
 
 init_db()
