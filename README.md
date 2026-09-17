@@ -62,6 +62,14 @@ npx cap sync ios
 npx cap open ios
 ```
 
+## Dashboard API (read-only)
+
+Ledger exposes a single read-only JSON endpoint so an external dashboard can show this month's spending without logging in.
+
+- `GET /api/summary` with header `Authorization: Bearer <DASHBOARD_API_TOKEN>`
+- Set two environment variables on Render: `DASHBOARD_API_TOKEN` (a long random string) and `DASHBOARD_API_EMAIL` (the Ledger account whose data is returned).
+- If either variable is missing the endpoint answers `401` and does nothing else.
+
 ## Possible next steps
 
 - Shared/family budgets across multiple accounts
