@@ -10,8 +10,9 @@ Ledger lets users log expenses, set budgets, and see where their money is going 
 
 **Accounts & security**
 - Multi-user accounts with secure password hashing
-- Login rate-limiting to slow down brute-force attempts
-- Password reset via email (Gmail SMTP)
+- Login rate-limiting: an account locks for 15 minutes after 5 failed attempts
+- CSRF protection on every form (Flask-WTF)
+- Change password from Settings, and password reset via email (Gmail SMTP)
 
 **Expense tracking**
 - Category-tagged expenses with icons

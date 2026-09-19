@@ -27,6 +27,7 @@ import psycopg2
 import psycopg2.extras
 from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
+from flask_wtf import CSRFProtect
 
 load_dotenv()
 
@@ -34,6 +35,14 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY")
 if not app.secret_key:
     raise RuntimeError("SECRET_KEY environment variable is required — set it in .env locally and in Render's Environment settings.")
+
+# Protects every state-changing form (add/edit/delete expense, change
+# password, settings, admin actions, etc.) against cross-site request
+# forgery: a form on this app is only accepted if it carries a token tied
+# to the user's own session, which an attacker's page can't forge. The
+# read-only /api/summary endpoint below is GET-only and token-authenticated
+# separately, so it's unaffected.
+csrf = CSRFProtect(app)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
@@ -135,6 +144,10 @@ def init_db():
         cur.execute("ALTER TABLE users ADD COLUMN reset_token_expires TIMESTAMP")
     if not column_exists(cur, "users", "currency"):
         cur.execute("ALTER TABLE users ADD COLUMN currency TEXT NOT NULL DEFAULT 'GBP'")
+    if not column_exists(cur, "users", "failed_login_attempts"):
+        cur.execute("ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER NOT NULL DEFAULT 0")
+    if not column_exists(cur, "users", "locked_until"):
+        cur.execute("ALTER TABLE users ADD COLUMN locked_until TIMESTAMP")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS expenses (
@@ -274,6 +287,10 @@ def register():
     return render_template("register.html")
 
 
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_MINUTES = 15
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -282,17 +299,55 @@ def login():
 
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id, password_hash FROM users WHERE email = %s", (email,))
+        cur.execute(
+            "SELECT id, password_hash, failed_login_attempts, locked_until FROM users WHERE email = %s",
+            (email,)
+        )
         row = cur.fetchone()
+
+        if row:
+            user_id, password_hash, failed_attempts, locked_until = row
+
+            if locked_until and locked_until > datetime.now():
+                minutes_left = int((locked_until - datetime.now()).total_seconds() / 60) + 1
+                cur.close()
+                conn.close()
+                flash(f"Too many failed attempts. Try again in {minutes_left} minute(s).")
+                return redirect(url_for("login"))
+
+            if check_password_hash(password_hash, password):
+                cur.execute(
+                    "UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = %s",
+                    (user_id,)
+                )
+                conn.commit()
+                cur.close()
+                conn.close()
+                session["user_id"] = user_id
+                session["email"] = email
+                session.permanent = bool(request.form.get("remember"))
+                return redirect(url_for("home"))
+
+            new_attempts = failed_attempts + 1
+            if new_attempts >= MAX_LOGIN_ATTEMPTS:
+                cur.execute(
+                    "UPDATE users SET failed_login_attempts = 0, locked_until = %s WHERE id = %s",
+                    (datetime.now() + timedelta(minutes=LOCKOUT_MINUTES), user_id)
+                )
+                conn.commit()
+                cur.close()
+                conn.close()
+                flash(f"Too many failed attempts. Account locked for {LOCKOUT_MINUTES} minutes.")
+                return redirect(url_for("login"))
+            else:
+                cur.execute(
+                    "UPDATE users SET failed_login_attempts = %s WHERE id = %s",
+                    (new_attempts, user_id)
+                )
+                conn.commit()
+
         cur.close()
         conn.close()
-
-        if row and check_password_hash(row[1], password):
-            session["user_id"] = row[0]
-            session["email"] = email
-            session.permanent = bool(request.form.get("remember"))
-            return redirect(url_for("home"))
-
         flash("Incorrect email or password.")
         return redirect(url_for("login"))
 
@@ -457,6 +512,46 @@ def admin():
         expenses_last_7_days=expenses_last_7_days,
         users=users,
     )
+
+
+@app.route("/change-password", methods=["POST"])
+@login_required
+def change_password():
+    uid = current_user_id()
+    current_password = request.form["current_password"]
+    new_password = request.form["new_password"]
+    confirm_password = request.form["confirm_password"]
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT password_hash FROM users WHERE id = %s", (uid,))
+    row = cur.fetchone()
+
+    if not row or not check_password_hash(row[0], current_password):
+        cur.close()
+        conn.close()
+        flash("Current password is incorrect.")
+        return redirect(url_for("settings"))
+
+    if new_password != confirm_password:
+        cur.close()
+        conn.close()
+        flash("New passwords don't match.")
+        return redirect(url_for("settings"))
+
+    if len(new_password) < 8:
+        cur.close()
+        conn.close()
+        flash("New password must be at least 8 characters.")
+        return redirect(url_for("settings"))
+
+    new_hash = generate_password_hash(new_password, method="pbkdf2:sha256")
+    cur.execute("UPDATE users SET password_hash = %s WHERE id = %s", (new_hash, uid))
+    conn.commit()
+    cur.close()
+    conn.close()
+    flash("Password updated successfully.")
+    return redirect(url_for("settings"))
 
 
 @app.route("/settings", methods=["GET", "POST"])
@@ -979,6 +1074,88 @@ def search():
         start_date=start_date,
         end_date=end_date,
         currency_symbol=CURRENCIES.get(get_user_currency(uid), "£"),
+    )
+
+
+@app.route("/week")
+@app.route("/week/<week_start_str>")
+@login_required
+def week_view(week_start_str=None):
+    uid = current_user_id()
+
+    if week_start_str:
+        week_start = datetime.strptime(week_start_str, "%Y-%m-%d").date()
+    else:
+        today = datetime.now().date()
+        week_start = today - timedelta(days=today.weekday())  # Monday of this week
+
+    week_end = week_start + timedelta(days=6)
+
+    rows = read_expenses(uid)
+    week_rows = [r for r in rows if week_start <= r["date"] <= week_end]
+
+    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    day_totals = [0.0] * 7
+    for r in week_rows:
+        day_idx = (r["date"] - week_start).days
+        day_totals[day_idx] += float(r["amount"])
+
+    totals_by_category = {}
+    week_total = 0.0
+    for r in week_rows:
+        amt = float(r["amount"])
+        totals_by_category[r["category"]] = totals_by_category.get(r["category"], 0) + amt
+        week_total += amt
+
+    category_data = [
+        {"name": cat, "total": total}
+        for cat, total in sorted(totals_by_category.items(), key=lambda x: -x[1])
+    ]
+
+    # Build per-category daily totals for a stacked bar chart, ordered
+    # by total spend (biggest category first, matching the list above)
+    category_order = [c["name"] for c in category_data]
+    day_by_category = {cat: [0.0] * 7 for cat in category_order}
+    for r in week_rows:
+        day_idx = (r["date"] - week_start).days
+        day_by_category[r["category"]][day_idx] += float(r["amount"])
+
+    palette = ["#C79A44", "#3F6B4F", "#B0453D", "#6B8CA3", "#8C6BA3", "#A3826B", "#6BA38C", "#A38C6B", "#6B6BA3"]
+    stacked_datasets = [
+        {
+            "label": cat.capitalize(),
+            "data": [round(v, 2) for v in day_by_category[cat]],
+            "backgroundColor": palette[i % len(palette)],
+        }
+        for i, cat in enumerate(category_order)
+    ]
+
+    day_labels = [f"{name} {(week_start + timedelta(days=i)).day}" for i, name in enumerate(day_names)]
+    avg_day = week_total / 7
+    busiest_day_idx = day_totals.index(max(day_totals)) if week_total > 0 else None
+    busiest_day = day_labels[busiest_day_idx] if busiest_day_idx is not None else None
+
+    today = datetime.now().date()
+    is_current_week = week_start <= today <= week_end
+
+    return render_template(
+        "week.html",
+        week_start=week_start,
+        week_end=week_end,
+        week_label=f"{week_start.strftime('%b %-d')} – {week_end.strftime('%b %-d, %Y')}",
+        day_labels=day_labels,
+        day_totals=[round(d, 2) for d in day_totals],
+        week_total=week_total,
+        category_data=category_data,
+        category_icons=CATEGORY_ICONS,
+        stacked_datasets=stacked_datasets,
+        avg_day=avg_day,
+        busiest_day=busiest_day,
+        expense_count=len(week_rows),
+        currency_symbol=CURRENCIES.get(get_user_currency(uid), "£"),
+        prev_week=(week_start - timedelta(days=7)).strftime("%Y-%m-%d"),
+        next_week=(week_start + timedelta(days=7)).strftime("%Y-%m-%d"),
+        is_current_week=is_current_week,
     )
 
 

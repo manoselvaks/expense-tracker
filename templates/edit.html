@@ -81,6 +81,7 @@
   <h1>Edit entry</h1>
   <div class="card">
     <form action="/update/{{ expense.id }}" method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label>Date</label>
       <input type="date" name="date" value="{{ expense.date }}" required>
 

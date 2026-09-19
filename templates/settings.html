@@ -74,6 +74,7 @@
       Each currency keeps its own separate history. Switching shows a fresh start for that currency — switch back anytime and your other currency's expenses, budgets, and recurring items are exactly as you left them.
     </p>
     <form method="POST" action="/settings">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label>Display currency</label>
       <select name="currency">
         {% for code, symbol in currencies.items() %}
@@ -83,12 +84,28 @@
       <button type="submit">Save</button>
     </form>
   </div>
+  <div class="card" style="margin-top:20px;">
+    <h2>Change password</h2>
+    <form method="POST" action="/change-password">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Current password</label>
+      <input type="password" name="current_password" required style="width:100%; font-size:15px; padding:11px 12px; border-radius:3px; border:1px solid var(--hairline); margin-bottom:14px;">
+      <label>New password</label>
+      <input type="password" name="new_password" required minlength="8" style="width:100%; font-size:15px; padding:11px 12px; border-radius:3px; border:1px solid var(--hairline); margin-bottom:4px;">
+      <div style="font-size:11px; color:var(--text-mute); margin-bottom:14px;">At least 8 characters</div>
+      <label>Confirm new password</label>
+      <input type="password" name="confirm_password" required minlength="8" style="width:100%; font-size:15px; padding:11px 12px; border-radius:3px; border:1px solid var(--hairline);">
+      <button type="submit">Update password</button>
+    </form>
+  </div>
+
   <div class="card" style="margin-top:20px; border-top:3px solid var(--brick);">
     <h2 style="color:var(--brick);">Danger zone</h2>
     <p style="font-size:13px; color:var(--text-mute); margin:0 0 16px 0;">
       This permanently deletes your account and every expense, budget, and recurring item you've logged. This cannot be undone.
     </p>
     <form id="delete-form" method="POST" action="/delete-account">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label>Confirm your password</label>
       <input type="password" name="password" id="delete-password" required style="margin-bottom:12px;">
       <button type="button" onclick="showDeleteModal()" style="background:var(--brick);">Delete my account permanently</button>

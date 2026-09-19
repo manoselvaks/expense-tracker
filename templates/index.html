@@ -312,6 +312,8 @@
       <div class="month">{{ month_label }}</div>
       <a href="/search" style="color:var(--gold); text-decoration:none; font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.05em;">Search</a>
       &nbsp;·&nbsp;
+      <a href="/week" style="color:var(--gold); text-decoration:none; font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.05em;">Week</a>
+      &nbsp;·&nbsp;
       <a href="/year" style="color:var(--gold); text-decoration:none; font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.05em;">Year →</a>
       &nbsp;·&nbsp;
       <a href="/export" style="color:var(--gold); text-decoration:none; font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.05em;">Export</a>
@@ -331,6 +333,7 @@
   <div class="card" style="background:#FFF8E8; display:flex; justify-content:space-between; align-items:center; gap:12px;">
     <div style="font-size:13px; color:var(--text-dark);">There's existing expense data from before accounts were added. Claim it as yours?</div>
     <form action="/claim-legacy-data" method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" style="white-space:nowrap;">Claim data</button>
     </form>
   </div>
@@ -391,6 +394,7 @@
   <div class="card">
     <h2>Log an expense</h2>
     <form class="inline expense-form" action="/add" method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="number" step="0.01" name="amount" placeholder="{{ currency_symbol }}0.00" required>
       <input type="text" name="note" placeholder="What was it?" required>
       <select name="category" required>
@@ -473,12 +477,14 @@
         <div style="display:flex; align-items:center; gap:10px;">
           <span class="cat-amount">{{ currency_symbol }}{{ "%.2f"|format(r.amount) }}</span>
           <form action="/recurring/update-payment/{{ r.id }}" method="POST" style="margin:0;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <select name="payment_method" onchange="this.form.submit()" style="width:auto; padding:5px 8px; font-size:12px;">
               <option value="debit" {% if r.payment_method == 'debit' %}selected{% endif %}>💳 Debit</option>
               <option value="credit" {% if r.payment_method == 'credit' %}selected{% endif %}>💰 Credit</option>
             </select>
           </form>
           <form action="/recurring/delete/{{ r.id }}" method="POST" id="recurring-delete-{{ r.id }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="button" onclick="showConfirmModal('recurring-delete-{{ r.id }}', 'Stop this recurring expense?')" style="background:none;color:var(--brick);border:none;padding:2px 6px;font-size:12px;box-shadow:none;">✕</button>
           </form>
         </div>
@@ -488,6 +494,7 @@
       <p class="empty-note">No recurring expenses set — add subscriptions or regular bills below.</p>
     {% endif %}
     <form class="inline expense-form" action="/recurring/add" method="POST" style="margin-top:16px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="number" step="0.01" name="amount" placeholder="{{ currency_symbol }}0.00" required>
       <input type="text" name="note" placeholder="e.g. Netflix" required>
       <select name="category" required>
@@ -506,6 +513,7 @@
   <div class="card">
     <h2>Set a budget</h2>
     <form class="budget-form" action="/budget" method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <select name="category" required>
         {% for c in categories %}
         <option value="{{ c }}">{{ category_icons.get(c, '') }} {{ c|capitalize }}</option>
@@ -523,6 +531,7 @@
         <div style="display:flex; align-items:center; gap:10px;">
           <span class="cat-amount">{{ currency_symbol }}{{ "%.2f"|format(b.amount) }}/mo</span>
           <form action="/budget/delete" method="POST" id="budget-delete-{{ b.category }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="category" value="{{ b.category }}">
             <button type="button" onclick="showConfirmModal('budget-delete-{{ b.category }}', 'Remove budget for {{ b.category }}?')" style="background:none;color:var(--brick);border:none;padding:2px 6px;font-size:12px;box-shadow:none;">✕</button>
           </form>
@@ -548,6 +557,7 @@
         <td style="text-align:right; white-space:nowrap;">
           <a href="/edit/{{ r.id }}" style="color:var(--text-mute); text-decoration:none; font-size:13px; padding:2px 6px;">✎</a>
           <form action="/delete/{{ r.id }}" method="POST" style="display:inline" id="expense-delete-{{ r.id }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="button" onclick="showConfirmModal('expense-delete-{{ r.id }}', 'Delete this entry?')" style="background:none;color:var(--brick);border:none;padding:2px 6px;font-size:12px;box-shadow:none;">✕</button>
           </form>
         </td>
